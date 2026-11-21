@@ -2,7 +2,7 @@
 
 > **This is a modified copy, not the original.** It is based on [emollick/ai-portals](https://github.com/emollick/ai-portals) by Ethan Mollick (release s8f, 471 worlds, the tree of November 9, 2026), which is licensed [CC BY-NC-SA 4.0](LICENSE). This copy adds a hand-held portal gun, mouse look and a brake; everything else, including every world, is the original work. The changes were made on November 21, 2026 and are listed under [What this copy changes](#what-this-copy-changes). They are shared under the same license, for non-commercial use only. The original author has not reviewed or endorsed this copy, and the live site linked below is the original, without the gun.
 
-**Play this copy in the browser: [paul1064.github.io/ai-portals](https://paul1064.github.io/ai-portals/)** (a desktop browser with a mouse; click once to take the mouse, press S for sound).
+**Play this copy in the browser: [paul1064.github.io/ai-portals](https://paul1064.github.io/ai-portals/)** (with a mouse: click once to take the mouse, press S for sound; on a phone: tap to shoot, drag to look round).
 
 [![The portal gun in the foreground; a wide magenta portal opens on a sea with red-sailed boats](readme/gun-1.jpg)](https://paul1064.github.io/ai-portals/)
 
@@ -57,6 +57,9 @@ This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself 
 | 1 to 6 | The dial's positions by number |
 | First click | Takes the mouse: from then on it looks round, as in a first-person game (Esc gives it back) |
 | Shift / W | Brake to a hover / push on |
+| Touch screen | Tap to shoot where you tap, drag to look round; two buttons at the lower left turn the dial and brake |
+
+The gun is loud by default: a shock ring and sparks where a portal opens, a shake, streaks of light and a wider lens on the way in, and quick fire. `?flash=0` gives the quiet gun, and the Gentle setting (G) keeps the shake and the lens out.
 
 ## Controls
 
@@ -130,7 +133,7 @@ The comments in the code are the agents' notes to themselves and to each other, 
 
 Changed against the original tree (commit `210133f`):
 
-- `src/gun/portal-gun.js` (new): the gun's model, its display and dial, the bolt, the sounds, mouse look, brake and push.
+- `src/gun/portal-gun.js` (new): the gun's model, its display and dial, the bolt, the sounds, mouse look, touch controls, brake and push, and the loud effects.
 - `src/core/engine.js`: `shoot()`, `canShoot()`, `requeue()` and the ray test behind them; a hidden portal made with each world for the shot; the viewer's look and throttle; a hook (`chooser`) that lets the dial pick the next world.
 - `src/core/portal.js`: one more portal look, `vortex`, used only for shot portals.
 - `src/main.js`: two lines that switch the gun on (`?gun=0` switches it off).

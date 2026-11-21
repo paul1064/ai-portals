@@ -40,6 +40,7 @@ async function boot() {
   const journey = plain ? null : readSuite(q, defs, SUITES, saved.calm === true || (q.has('calm') && q.get('calm') !== '0'));
 
   const engine = new Engine($('view'), defs, {
+    flash: q.get('flash') !== '0',   // the gun's loud effects (shock wave, shake, streaks of light, quicker fire); ?flash=0 for the quiet gun
     shots: !plain && q.get('gun') !== '0',   // the portal gun (src/gun/portal-gun.js); ?gun=0 flies without it
     seed: q.has('session') ? num('session') : undefined, seen,
     tourHours: journey ? journey.hours : null,   // the hour a journey names for a step (design/suites.json hours), ahead of the viewer's own Hour while it lasts
@@ -380,7 +381,7 @@ async function boot() {
   // the index of worlds (its button on the bar, I, #worlds, or hold the options button). It marks the worlds seen (not on a journey link, which keeps no memory) and the favourites.
   const atlas = setupAtlas({ worlds: WORLDS, suites: SUITES, engine, setPaused, optionsButton: $('b-more'), onReport: () => report(), seen, hearts, onHeart: (id) => heart(id, false), onAbout: aboutOn ? about : null });
   $('b-worlds').onclick = () => atlas.toggle();   // the gallery button on the bar
-  if (engine.opts.shots) import('./gun/portal-gun.js').then((m) => { window.__gun = m.setupGun({ engine, hearts, toast, soundOn: () => bSound.classList.contains('on') }); }).catch((e) => console.warn('portal gun', e));
+  if (engine.opts.shots) import('./gun/portal-gun.js').then((m) => { window.__gun = m.setupGun({ engine, hearts, toast, flash: engine.opts.flash, soundOn: () => bSound.classList.contains('on') }); }).catch((e) => console.warn('portal gun', e));
   $('b-next').onclick = () => engine.skip();
   const photo = () => {
     engine.frame(0);

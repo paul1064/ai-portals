@@ -867,7 +867,7 @@ export class Engine {
     else { this.arrived += dt; this._turn(this.camQuat, _q, dt); }
     cam.quaternion.copy(this.camQuat);
     // the viewer may look round (the portal gun, src/gun): a turn and a tilt of the head laid over the flight gaze
-    if (this.look && (this.look.yaw || this.look.pitch)) cam.quaternion.multiply(_lookQ.setFromEuler(_lookE.set(this.look.pitch, this.look.yaw, 0, 'YXZ')));
+    if (this.look) { const lk = this.look, ly = lk.yaw + (lk.sy || 0), lp = lk.pitch + (lk.sp || 0); if (ly || lp) cam.quaternion.multiply(_lookQ.setFromEuler(_lookE.set(lp, ly, 0, 'YXZ'))); }   // (sy, sp: a shake laid over it, the gun's)
 
     // a feed world shows the next world itself, so its opening is open as soon as there is a next world
     let revealT = B ? (A.feed ? 1 : 1 - smoothstep(A.revealDist * 0.6, A.revealDist, remaining)) : 0;
@@ -899,7 +899,7 @@ export class Engine {
       const n = this.postNow, g = B.post.exposure / Math.max(1e-3, n.exposure), lim = (x) => clamp(x, 0.45, 2.2);
       A.portal.setGain(lim(g * B.post.tint.r / Math.max(0.05, n.tint.r)), lim(g * B.post.tint.g / Math.max(0.05, n.tint.g)), lim(g * B.post.tint.b / Math.max(0.05, n.tint.b)));
     }
-    cam.fov = fovFor(this.postNow.fov, cam.aspect); cam.far = A.cam.far;
+    cam.fov = Math.min(150, fovFor(this.postNow.fov, cam.aspect) * (1 + (this.fovKick || 0))); cam.far = A.cam.far;   // fovKick: the gun widens the lens on the way into a shot portal
     // THE LENS'S NEAR PLANE NEVER REACHES THE OPENING. The worlds cross 0.45 m before the line's end; a world whose near distance
     // is longer than the lens then stands from the opening had the opening cut away before the crossing (all at once where the
     // lens looks square at it, from one side where it looks aslant) and the old world drawn again behind it for a frame or two

@@ -4,6 +4,7 @@
 //   1 .. 6         the dial's positions by number
 //   first click    takes the mouse (Esc gives it back): from then on the mouse looks round, as in a first-person game
 //   Shift / W      brake to a hover / push on
+// On a touch screen: tap to shoot where you tap, drag to look round, and two buttons at the lower left (the dial; a brake to hold).
 // The gun is drawn by a small renderer of its own on a transparent canvas above the picture, so no world's fog, grade or
 // near plane touches it; the world's key light is borrowed so that it still sits in the scene. The portal itself, the
 // curve of the flight into it and the crossing are the engine's (core/engine.js shoot(), core/portal.js 'vortex').
@@ -40,10 +41,20 @@ body.gun #view { cursor: none; }
 #gun-stamp b { font-weight: 700; color: #fff; }
 #gun-flash { position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0; background: radial-gradient(ellipse at center, transparent 30%, var(--gun, #6dff3b) 130%); transition: opacity .9s ease; mix-blend-mode: screen; }
 #gun-flash.on { opacity: .85; transition-duration: .05s; }
+#gun-flash.big { background: radial-gradient(ellipse at center, #fff 0%, var(--gun, #6dff3b) 45%, var(--gun, #6dff3b) 130%); }
+#gun-flash.big.on { opacity: 1; }
 body.notitles #gun-stamp { display: none; }
+#gun-pad { position: fixed; left: calc(14px + env(safe-area-inset-left, 0px)); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); display: none; flex-direction: column; gap: 12px; z-index: 4; opacity: 0; transition: opacity .4s ease; pointer-events: none; -webkit-user-select: none; user-select: none; }
+body.gun-touch #gun-pad { display: flex; }
+#gun-pad.on { opacity: 1; pointer-events: auto; }
+#gun-pad button { all: unset; box-sizing: border-box; min-width: 92px; height: 54px; padding: 0 14px; border-radius: 27px; border: 1.5px solid var(--gun, #6dff3b); background: rgba(6, 10, 8, .5); color: #fff; font: 700 13px/1 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; letter-spacing: .14em; text-align: center; text-shadow: 0 0 8px var(--gun, #6dff3b); box-shadow: 0 0 14px -4px var(--gun, #6dff3b); touch-action: none; -webkit-tap-highlight-color: transparent; }
+#gun-pad button small { display: block; margin-bottom: 5px; font-size: 9px; font-weight: 600; letter-spacing: .22em; opacity: .7; }
+#gun-pad button.down { background: var(--gun, #6dff3b); color: #04120a; text-shadow: none; }
+@media (max-height: 480px) { #gun-pad { bottom: calc(74px + env(safe-area-inset-bottom, 0px)); flex-direction: row; } }
 `;
 
-export function setupGun({ engine, hearts, toast, soundOn }) {
+export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }) {
+  const cooldown = FLASH ? 0.5 : COOLDOWN;
   const $ = (id) => document.getElementById(id), view = $('view');
   const style = document.createElement('style'); style.textContent = CSS; document.head.appendChild(style);
   const canvas = document.createElement('canvas'); canvas.id = 'gun'; view.after(canvas);
@@ -51,10 +62,12 @@ export function setupGun({ engine, hearts, toast, soundOn }) {
   cross.innerHTML = '<svg viewBox="0 0 44 44" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><g class="ring"><circle cx="22" cy="22" r="11"/><path d="M22 4v7M22 33v7M4 22h7M33 22h7"/></g><circle cx="22" cy="22" r="1.4" fill="currentColor" stroke="none"/></svg>';
   const stamp = document.createElement('div'); stamp.id = 'gun-stamp';
   const flash = document.createElement('div'); flash.id = 'gun-flash';
-  document.body.append(flash, cross, stamp); document.body.classList.add('gun');
+  const pad = document.createElement('div'); pad.id = 'gun-pad';
+  pad.innerHTML = '<button id="gun-b-mode" aria-label="Ziel wählen"><small>ZIEL</small><span></span></button><button id="gun-b-brake" aria-label="Bremsen (halten)"><small>HALTEN</small>BREMSE</button>';
+  document.body.append(flash, cross, stamp, pad); document.body.classList.add('gun');
 
   let renderer;
-  try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' }); }
+  try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: !engine.mobile, powerPreference: 'high-performance' }); }   // (a phone draws the gun without antialiasing and at one pixel per point: its second context must cost little)
   catch (e) { console.warn('portal gun: no second graphics context', e); canvas.remove(); cross.remove(); document.body.classList.remove('gun'); return null; }
   renderer.setClearColor(0x000000, 0); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
   const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(40, 1, 0.02, 400);
@@ -224,12 +237,24 @@ export function setupGun({ engine, hearts, toast, soundOn }) {
   const bolt = sprite(scene, 0.1, 0); const boltCore = sprite(scene, 0.04, 0); boltCore.material.color.set(0xffffff);
   const trail = Array.from({ length: 14 }, () => sprite(scene, 0.05, 0));
   const burst = sprite(scene, 1, 0);
-  const tinted = [glow.emissive, fluidMat.uniforms.uColor.value, tipGlow.material.color, vialGlow.material.color, vialLight.color, muzzleLight.color, bolt.material.color, burst.material.color, ...trail.map((t) => t.material.color)];
+  // the loud effects (FLASH): a shock ring where the portal opens, sparks wound into it, and streaks of light on the way in
+  const ringTex = tex(256, 256, (g, w) => { const r = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2); r.addColorStop(0, 'rgba(255,255,255,0)'); r.addColorStop(0.72, 'rgba(255,255,255,0)'); r.addColorStop(0.86, 'rgba(255,255,255,1)'); r.addColorStop(0.93, 'rgba(255,255,255,.35)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, w, w); });
+  const ring = sprite(scene, 1, 0); ring.material.map = ringTex;
+  const NS = 90, sparkPos = new Float32Array(NS * 3), sparkSeed = Array.from({ length: NS }, () => [Math.random() * Math.PI * 2, Math.random(), 0.6 + Math.random() * 0.8]);
+  const sparkGeo = new THREE.BufferGeometry(); sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
+  const sparks = new THREE.Points(sparkGeo, new THREE.PointsMaterial({ map: dot, color: MODES[0].color, size: 0.1, sizeAttenuation: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }));
+  sparks.frustumCulled = false; sparks.renderOrder = 9; sparks.visible = false; scene.add(sparks);
+  const NL = 170, linePos = new Float32Array(NL * 6), lineSeed = Array.from({ length: NL }, () => { const a = Math.random() * Math.PI * 2, r = 0.4 + Math.random() * 2.4; return [Math.cos(a) * r, Math.sin(a) * r * 0.75, -Math.random() * 44, 0.6 + Math.random() * 0.9]; });
+  const lineGeo = new THREE.BufferGeometry(); lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
+  const streaks = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ color: MODES[0].color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }));
+  streaks.frustumCulled = false; streaks.renderOrder = 8; streaks.visible = false; cam.add(streaks);
+  const tinted = [ring.material.color, sparks.material.color, streaks.material.color, glow.emissive, fluidMat.uniforms.uColor.value, tipGlow.material.color, vialGlow.material.color, vialLight.color, muzzleLight.color, bolt.material.color, burst.material.color, ...trail.map((t) => t.material.color)];
 
   // ---------- state ----------
   let mode = 0; try { const m = Number(localStorage.getItem('portals.gun.mode')); if (m >= 0 && m < MODES.length) mode = Math.floor(m); } catch (e) {}
   const colNow = new THREE.Color(MODES[mode].color), colTo = new THREE.Color(MODES[mode].color);
   const worldsById = new Map(engine.registry.map((d) => [d.id, d])), trailIds = [];
+  let shake = 0, warp = 0, arrived = 0, rift = null, ringT = 9;
   let charge = 1, raise = 0, recoil = 0, recoilV = 0, heat = 0, slosh = 0, sloshV = 0, knobAng = 0, mx = 0.25, my = -0.1, aimX = 0, aimY = 0, hover = false, note = '', noteUntil = 0, shot = null, lastShotWorld = null, dispKey = '', swayX = 0, swayY = 0;
   const lastQ = new THREE.Quaternion(); let lastQSet = false;
 
@@ -253,7 +278,7 @@ export function setupGun({ engine, hearts, toast, soundOn }) {
   const setMode = (i, quiet) => {
     i = ((i % MODES.length) + MODES.length) % MODES.length; if (i === mode && !quiet) return;
     mode = i; const m = MODES[mode]; colTo.set(m.color);
-    document.documentElement.style.setProperty('--gun', m.color);
+    document.documentElement.style.setProperty('--gun', m.color); pad.querySelector('span').textContent = m.name;
     try { localStorage.setItem('portals.gun.mode', String(mode)); } catch (e) {}
     if (quiet) return;
     click(); slosh += 0.4;
@@ -319,19 +344,46 @@ export function setupGun({ engine, hearts, toast, soundOn }) {
     if (charge < 1) { dry(); return; }
     const res = engine.shoot((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1, MODES[mode].color);
     if (!res) { say('ZU NAH', 1200); dry(); return; }
-    charge = 0; recoilV += 5.2; heat = 1; sloshV += 9; lastShotWorld = A;
+    charge = 0; recoilV += FLASH ? 8 : 5.2; heat = 1; sloshV += 9; lastShotWorld = A; rift = null; if (FLASH) shake = Math.max(shake, 0.45);
     shot = { t: 0, delay: res.delay, point: res.point, radius: res.radius, landed: false, from: body.localToWorld(_v.copy(MUZZLE)).clone(), hist: [] };
     cross.classList.add('kick'); requestAnimationFrame(() => requestAnimationFrame(() => cross.classList.remove('kick')));
     bang(res.delay);
   }
-  const canLock = !!view.requestPointerLock && !matchMedia('(pointer: coarse)').matches;
+  const canLock = !!view.requestPointerLock;
+  // A finger: a short tap shoots where it lands, a drag turns the view with it (the picture follows the finger). The first
+  // touch also brings up the two buttons. A mouse: the first click takes the pointer, as before.
+  const fingers = new Map(); let touchTip = false;
+  const touchOn = () => { if (!document.body.classList.contains('gun-touch')) document.body.classList.add('gun-touch'); };
+  if (matchMedia('(pointer: coarse)').matches) touchOn();
   view.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse') { touchOn(); fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, at: performance.now(), moved: false }); try { view.setPointerCapture(e.pointerId); } catch (err) {} return; }
     if (e.button === 2) { if (!blocked()) setMode(mode + 1); return; }
     if (e.button !== 0) return;
     if (locked) return fire(window.innerWidth / 2, window.innerHeight / 2);
-    if (canLock && e.pointerType === 'mouse' && !blocked()) { try { const p = view.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* the click fires instead */ } }
+    if (canLock && !blocked()) { try { const p = view.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* the click fires instead */ } }
     fire(e.clientX, e.clientY);
   });
+  view.addEventListener('pointermove', (e) => {
+    const f = fingers.get(e.pointerId); if (!f) return;
+    const dx = e.clientX - f.x, dy = e.clientY - f.y; f.x = e.clientX; f.y = e.clientY;
+    if (!f.moved && Math.hypot(e.clientX - f.x0, e.clientY - f.y0) > 12) f.moved = true;
+    if (!f.moved || blocked()) return;
+    const k = (engine.camera.fov * Math.PI / 180) / window.innerHeight;   // one screen height of drag is one field of view
+    look.yaw = (look.yaw + dx * k) % (Math.PI * 2); look.pitch = THREE.MathUtils.clamp(look.pitch + dy * k, -1.35, 1.35);
+  });
+  const lift = (e, tap) => {
+    const f = fingers.get(e.pointerId); if (!f) return; fingers.delete(e.pointerId);
+    if (!tap || f.moved || performance.now() - f.at > 450) return;
+    cross.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`; tapAt = performance.now();
+    fire(e.clientX, e.clientY);
+  };
+  let tapAt = -1e9;
+  view.addEventListener('pointerup', (e) => lift(e, true)); view.addEventListener('pointercancel', (e) => lift(e, false));
+  const bMode = pad.querySelector('#gun-b-mode'), bBrake = pad.querySelector('#gun-b-brake');
+  bMode.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); bMode.classList.add('down'); setTimeout(() => bMode.classList.remove('down'), 140); if (!blocked()) setMode(mode + 1); });
+  const brake = (on) => (e) => { e.preventDefault(); e.stopPropagation(); bBrake.classList.toggle('down', on); keys.brake = on; engine.throttle = keys.brake ? 0.06 : keys.push ? 2.4 : 1; if (on) { try { bBrake.setPointerCapture(e.pointerId); } catch (err) {} } };
+  bBrake.addEventListener('pointerdown', brake(true)); for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) bBrake.addEventListener(ev, brake(false));
+  pad.addEventListener('contextmenu', (e) => e.preventDefault());
   view.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('pointerlockchange', () => {
     locked = document.pointerLockElement === view; document.body.classList.toggle('gun-look', locked);
@@ -370,8 +422,8 @@ export function setupGun({ engine, hearts, toast, soundOn }) {
     if (trailIds[trailIds.length - 2] === id) trailIds.pop(); else { trailIds.push(id); if (trailIds.length > 40) trailIds.shift(); }
     const meta = $('title-meta'); if (meta) meta.textContent += ' · Dimension ' + code;
     stamp.innerHTML = 'DIMENSION <b>' + code + '</b>'; stamp.classList.add('show'); clearTimeout(stampT); stampT = setTimeout(() => stamp.classList.remove('show'), 3200);
-    if (lastShotWorld && lastShotWorld.shot) { flash.classList.add('on'); setTimeout(() => flash.classList.remove('on'), 70); }
-    lastShotWorld = null; shot = null;
+    if (lastShotWorld && lastShotWorld.shot) { flash.classList.toggle('big', FLASH); flash.classList.add('on'); setTimeout(() => flash.classList.remove('on'), FLASH ? 110 : 70); if (FLASH) { arrived = 0.5; shake = Math.max(shake, 0.7); } }
+    lastShotWorld = null; shot = null; rift = null;
     // on 'ZURÜCK' the world just left is now the one before: nothing to do, the trail has it. On a tier with nothing left the dial says so.
   };
 
@@ -382,18 +434,18 @@ export function setupGun({ engine, hearts, toast, soundOn }) {
   function step(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
     const W = window.innerWidth, H = window.innerHeight;
-    if (W !== w || H !== h) { w = W; h = H; renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); renderer.setSize(W, H, false); cam.aspect = W / H; cam.updateProjectionMatrix(); }
+    if (W !== w || H !== h) { w = W; h = H; renderer.setPixelRatio(engine.mobile ? Math.min(window.devicePixelRatio || 1, 1.25) : Math.min(window.devicePixelRatio || 1, 1.5)); renderer.setSize(W, H, false); cam.aspect = W / H; cam.updateProjectionMatrix(); }
     const A = engine.cur, live = !!A && !A.def.antechamber && !blocked();
     if (locked && blocked()) { try { document.exitPointerLock(); } catch (e) {} }
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
-    if (live && !firstUp && raise > 0.5) { firstUp = true; toast('Linksklick: Portal schießen · Mausrad oder Q/E: Ziel wählen', 6000); }
-    cross.classList.toggle('on', live && (hover || locked) && raise > 0.6); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready));
+    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal schießen · Wischen: umschauen · ZIEL: Welt wählen' : 'Linksklick: Portal schießen · Mausrad oder Q/E: Ziel wählen', 6000); }
+    cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready));
     if (lostAt) return;
     if (raise < 0.004 && !shot) { if (!cleared) { renderer.clear(); cleared = true; } return; }
     cleared = false;
 
     // charge, heat, colour
-    charge = Math.min(1, charge + dt / COOLDOWN); heat = Math.max(0, heat - dt * 1.6);
+    charge = Math.min(1, charge + dt / cooldown); heat = Math.max(0, heat - dt * 1.6);
     colNow.lerp(colTo, 1 - Math.exp(-dt * 7)); for (const c of tinted) c.copy(colNow);
     const ready = charge >= 1 && !!(engine.next && engine.next.ready), pulse = 0.5 + 0.5 * Math.sin(t * (ready ? 2.2 : 9));
     glow.emissiveIntensity = 1.2 + 1.6 * charge * (0.7 + 0.3 * pulse) + 7 * heat;
@@ -437,12 +489,41 @@ export function setupGun({ engine, hearts, toast, soundOn }) {
         shot.hist.forEach((p, i) => { const s = trail[i], f = 1 - i / trail.length; s.position.copy(p); s.scale.setScalar(size * 2.2 * f); s.material.opacity = 0.55 * f * f; });
       } else {
         bolt.material.opacity = 0; boltCore.material.opacity = 0;
+        if (!shot.landed) { shot.landed = true; rift = { point: shot.point, radius: shot.radius }; if (FLASH) { shake = 1; ringT = 0; } }
         const b = (shot.t - shot.delay) / 0.45;
         if (b < 1) { burst.position.copy(_v); burst.scale.setScalar((0.3 + 1.5 * Math.sqrt(b)) * shot.radius * 2.2); burst.material.opacity = (1 - b) * (1 - b) * 0.9; }
         else { burst.material.opacity = 0; if (shot.t > shot.delay + 1.2) shot = null; }
       }
     } else { bolt.material.opacity = 0; boltCore.material.opacity = 0; burst.material.opacity = 0; }
 
+    if (FLASH) {
+      // the shake (a turn of the head the engine lays over the view), dying away; none on a gentle flight
+      shake = Math.max(0, shake - dt * 2.4); const sa = engine.gentle ? 0 : shake * shake * 0.03;
+      look.sy = sa * (Math.sin(t * 67) + 0.6 * Math.sin(t * 113 + 1)); look.sp = sa * (Math.sin(t * 59 + 2) + 0.6 * Math.sin(t * 97));
+      // the way in: over the second half of the flight to a shot portal the lens widens and light streaks past; it lingers a moment after the crossing
+      const sh = A && A.shot, left = sh ? (A.path.length - A.dist) / Math.max(1, A.path.length) : 1; arrived = Math.max(0, arrived - dt);
+      const to = arrived > 0 ? 1 : sh && sh.t > sh.delay ? THREE.MathUtils.clamp((0.7 - left) / 0.45, 0, 1) : 0;
+      warp += (to - warp) * (1 - Math.exp(-dt * (to > warp ? 3 : 5))); engine.fovKick = engine.gentle ? 0 : 0.16 * warp * warp;
+      streaks.visible = warp > 0.02;
+      if (streaks.visible) {
+        const sp = 26 + 90 * warp, len = 0.4 + 7 * warp;
+        for (let i = 0; i < NL; i++) { const q = lineSeed[i]; q[2] += dt * sp * q[3]; if (q[2] > 2) q[2] -= 46; const o = i * 6; linePos[o] = linePos[o + 3] = q[0]; linePos[o + 1] = linePos[o + 4] = q[1]; linePos[o + 2] = q[2]; linePos[o + 5] = q[2] - len * q[3]; }
+        lineGeo.attributes.position.needsUpdate = true; streaks.material.opacity = 0.75 * warp;
+      }
+      // the shock ring and the sparks, where the portal stands in this camera's picture
+      sparks.visible = false; ring.material.opacity = 0;
+      if (rift && A) {
+        _v.copy(rift.point).project(ec); const depth = _w.copy(rift.point).sub(ec.position).length();
+        if (_v.z < 1 && depth > 0.5) {
+          _v.set(_v.x, _v.y, 0.5).unproject(cam).sub(cam.position).normalize().multiplyScalar(depth);
+          const R = rift.radius; ringT += dt; const rb = ringT / 0.6;
+          if (rb < 1) { ring.position.copy(_v); ring.scale.setScalar((0.6 + 5.5 * Math.sqrt(rb)) * R * 2); ring.material.opacity = (1 - rb) * (1 - rb); }
+          sparks.visible = true; sparks.material.size = R * 0.34; sparks.material.opacity = 0.85 * Math.min(1, ringT * 3);
+          for (let i = 0; i < NS; i++) { const q = sparkSeed[i], f = (t * 0.55 * q[2] + q[1]) % 1, rr = R * (2.6 - 2.3 * f), a = q[0] + 5.5 * f * f; sparkPos[i * 3] = _v.x + Math.cos(a) * rr; sparkPos[i * 3 + 1] = _v.y + Math.sin(a) * rr; sparkPos[i * 3 + 2] = _v.z + R * 0.3 * (1 - f); }
+          sparkGeo.attributes.position.needsUpdate = true;
+        }
+      }
+    }
     drawDisplay(now);
     renderer.render(scene, cam);
   }
