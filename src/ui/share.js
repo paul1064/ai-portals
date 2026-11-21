@@ -2,6 +2,7 @@
 // main.js wires these to the bar and the options; the gallery (atlas.js) is handed the favourites and the seen list.
 // tools/build-deploy.mjs writes the page behind a world link (w/<id>/index.html) and copies og.jpg.
 
+import { dimCode } from '../gun/dim.js';
 export const SITE = 'https://portals-endless-worlds.netlify.app';   // printed on saved pictures; the tags in index.html carry it too
 
 // ---------- the About ----------
@@ -100,7 +101,7 @@ export function readSuite(q, defs, suites, calm) {
 export function suiteLink(id, loc = location) {
   const dir = loc.origin + loc.pathname.replace(/[^/]*$/, '');
   const local = loc.protocol === 'file:' || /^(localhost|127\.|0\.0\.0\.0|\[::1\]|10\.|192\.168\.)/.test(loc.hostname);
-  return local ? dir + '?suite=' + encodeURIComponent(id) : dir + 'j/' + encodeURIComponent(id) + '/';
+  return dir + '?suite=' + encodeURIComponent(id);   // (this copy is served without the j/<id>/ pages)
 }
 
 // The address that shows one world: its own small page (w/<id>/, written by build-deploy with that world's name and
@@ -109,7 +110,7 @@ export function worldLink(id, loc = location) {
   const dir = loc.origin + loc.pathname.replace(/[^/]*$/, '');
   if (!id) return dir;
   const local = loc.protocol === 'file:' || /^(localhost|127\.|0\.0\.0\.0|\[::1\]|10\.|192\.168\.)/.test(loc.hostname);
-  return local ? dir + '?start=' + encodeURIComponent(id) : dir + 'w/' + encodeURIComponent(id) + '/';
+  return dir + '?dim=' + dimCode(id);   // (this copy is served without the w/<id>/ pages: the link names the world by its dimension code, which main.js reads)
 }
 
 // A link that replays this sitting: its session number (every world's seed comes from it), the worlds flown so far

@@ -1,11 +1,13 @@
 // The portal gun: a hand-held rift projector drawn over the flight, and the controls that go with it.
-//   left click     open a portal where the crosshair points; the flight turns into it
+//   left click     open a portal where the crosshair points; the flight turns into it. Held and let go: a charged shot,
+//                  whose portal stands further off, is wider and is flown to faster
 //   right click    the push: a white hole where the crosshair points hurls you back and up, to a portal at the end of the throw
 //   wheel, Q / E   turn the dial: which kind of world waits behind the next portal
 //   1 .. 6         the dial's positions by number
 //   first click    takes the mouse (Esc gives it back): from then on the mouse looks round, as in a first-person game
 //   W A S D, arrows  fly: W pushes on, S (or Shift) brakes to a hover, A and D slip sideways; space rises, C sinks
 //   looking         the flight drifts toward where you look, inside a tube round the world's route (engine._steer)
+//   cores           golden energy cores hang beside the route of every world: flown into, each loads one push (three at the most)
 // On a touch screen: tap to shoot where you tap, drag to look round, and buttons at the lower left: the dial, a brake to hold,
 // and NEIGEN, which lets the phone itself be turned to look round (its orientation sensor).
 // On a phone the gun is drawn straight into the picture by the engine's own renderer, after the frame is finished (INLINE below):
@@ -15,6 +17,7 @@
 // curve of the flight into it and the crossing are the engine's (core/engine.js shoot(), core/portal.js 'vortex').
 import * as THREE from 'three';
 import { tierOf } from '../core/pick.js';
+import { dimCode } from './dim.js';
 
 const MODES = [
   { id: 'any', name: 'ZUFALL', hint: 'irgendeine Dimension', color: '#6dff3b' },
@@ -26,12 +29,7 @@ const MODES = [
 ];
 const COOLDOWN = 1.15;
 
-// A world's dimension code: two letters and three digits from its id, the same on every visit.
-export function dimCode(id) {
-  let h = 2166136261; for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
-  h >>>= 0; const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-  return A[h % 24] + A[Math.floor(h / 24) % 24] + '-' + String(Math.floor(h / 576) % 1000).padStart(3, '0');
-}
+export { dimCode };   // (its home is dim.js, which the page reads without loading the gun)
 
 const CSS = `
 #gun { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
@@ -57,6 +55,14 @@ body.gun-touch #gun-pad { display: flex; }
 #gun-pad button.down { background: var(--gun, #6dff3b); color: #04120a; text-shadow: none; }
 #gun-pad #gun-b-push { border-color: #fff; box-shadow: 0 0 16px -3px #fff; text-shadow: 0 0 8px #fff; }
 #gun-pad #gun-b-push.down { background: #fff; }
+#gun-pad #gun-b-push.empty { opacity: .45; box-shadow: none; }
+#gun-pad #gun-b-push small { color: #ffd24a; opacity: 1; letter-spacing: .3em; font-size: 11px; }
+#gun-x.over { color: #fff; }
+#gun-cores { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(14px + env(safe-area-inset-top, 0px)); pointer-events: none; z-index: 3; font: 600 15px/1 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; letter-spacing: .18em; color: #ffd24a; text-shadow: 0 0 10px #ffa800, 0 0 2px #000; opacity: 0; transition: opacity .5s ease, transform .25s ease; white-space: nowrap; }
+#gun-cores.on { opacity: .95; }
+#gun-cores.got { transform: scale(1.35); }
+#gun-cores small { font-size: 11px; opacity: .75; margin-left: .7em; }
+body.notitles #gun-cores { display: none; }
 @media (max-height: 480px) { #gun-pad { bottom: calc(74px + env(safe-area-inset-bottom, 0px)); flex-direction: row; } }
 `;
 
@@ -71,7 +77,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const flash = document.createElement('div'); flash.id = 'gun-flash';
   const pad = document.createElement('div'); pad.id = 'gun-pad';
   pad.innerHTML = '<button id="gun-b-mode" aria-label="Ziel wählen"><small>ZIEL</small><span></span></button><button id="gun-b-brake" aria-label="Bremsen (halten)"><small>HALTEN</small>BREMSE</button><button id="gun-b-tilt" aria-label="Umschauen durch Drehen des Handys" aria-pressed="false"><small>HANDY</small>NEIGEN</button><button id="gun-b-push" aria-label="Push: ein weißes Loch schleudert dich weg"><small>WEISSES LOCH</small>PUSH</button>';
-  document.body.append(flash, cross, stamp, pad); document.body.classList.add('gun');
+  const chip = document.createElement('div'); chip.id = 'gun-cores';
+  document.body.append(flash, cross, stamp, pad, chip); document.body.classList.add('gun');
 
   // INLINE: no canvas and no context of the gun's own. The engine calls draw() at the end of each of its frames (engine.overlay)
   // and the gun's scene goes over the finished picture: one context, one layer on the screen, nothing to blend.
@@ -323,6 +330,12 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const ejGeo = new THREE.BufferGeometry(); ejGeo.setAttribute('position', new THREE.BufferAttribute(ejPos, 3));
   const ejecta = new THREE.Points(ejGeo, new THREE.PointsMaterial({ map: dot, color: 0xffffff, size: 0.1, sizeAttenuation: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }));
   ejecta.frustumCulled = false; ejecta.renderOrder = 9; ejecta.visible = false; scene.add(ejecta);
+  // the energy cores: a white heart, a golden halo and a ring round it
+  const NC = 5, GOLD = 0xffc23a, cores = Array.from({ length: NC }, () => {
+    const halo = sprite(scene, 1, 0), heart = sprite(scene, 1, 0), rg = sprite(scene, 1, 0);
+    halo.material.color.set(GOLD); heart.material.color.set(0xfff6d8); rg.material.map = ringTex; rg.material.color.set(GOLD);
+    return { pos: new THREE.Vector3(), on: false, gone: 0, pick: 2, halo, heart, rg, ph: Math.random() * 6.28 };
+  });
   const tinted = [holeHalo.material.color, ring.material.color, sparks.material.color, streaks.material.color, glow.emissive, fluidMat.uniforms.uColor.value, tipGlow.material.color, vialGlow.material.color, vialLight.color, muzzleLight.color, bolt.material.color, burst.material.color, ...trail.map((t) => t.material.color)];
 
   // ---------- state ----------
@@ -355,6 +368,15 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   engine.chooser = () => pickFor(MODES[mode]);
   const look = engine.look = { yaw: 0, pitch: 0 }; engine.throttle = 1;
   let locked = false, lockTip = false; const keys = { brake: false, push: false };
+  // charging (a shot held back), and the cores: how many pushes are loaded (one to begin with), how many cores were ever caught
+  let mHold = 0, over = 0, hum = null, restT = 0, cells = 1, total = 0, coreWorld = null, coreTipAt = 0, cellTip = false, chipT = 0;
+  try { total = Math.max(0, parseInt(localStorage.getItem('portals.gun.cores'), 10) || 0); } catch (e) {}
+  const powerOf = (at) => THREE.MathUtils.clamp((performance.now() - at - 250) / 1000, 0, 1);   // a quarter second is still a plain shot; a second more is full
+  const setCells = (n) => {
+    cells = Math.max(0, Math.min(3, n)); const marks = '\u25C6'.repeat(cells) + '\u25C7'.repeat(3 - cells);
+    chip.innerHTML = marks + '<small>' + total + '</small>'; const b = pad.querySelector('#gun-b-push'); b.querySelector('small').textContent = marks; b.classList.toggle('empty', cells < 1);
+  };
+  setCells(cells);
 
   const say = (text, ms = 1600) => { note = text; noteUntil = performance.now() + ms; };
   const setMode = (i, quiet) => {
@@ -384,11 +406,13 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     n.buffer = b; const hp = a.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.setValueAtTime(300, t); hp.frequency.exponentialRampToValueAtTime(6000, t + 0.35); hp.Q.value = 0.8; n.connect(hp); hp.connect(env(a, t, 0.32, 0.5)); n.start(t);
     for (const [fr, det] of [[880, 0], [1318, 7], [1760, -6]]) { const o = a.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(fr, t + 0.05); o.frequency.exponentialRampToValueAtTime(fr * 0.35, t + 1.3); o.detune.value = det; o.connect(env(a, t + 0.05, 0.05, 1.3)); o.start(t + 0.05); o.stop(t + 1.4); }
   };
-  const bang = (delay) => {
+  const chime = () => { const a = audio(); if (!a) return; const t = a.currentTime; for (const [fr, at] of [[1318, 0], [1976, 0.07], [2637, 0.14]]) { const o = a.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(fr, t + at); o.connect(env(a, t + at, 0.11, 0.3)); o.start(t + at); o.stop(t + at + 0.34); } };
+  const bang = (delay, power = 0) => {
     const a = audio(); if (!a) return; const t = a.currentTime;
     const o = a.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(1500, t); o.frequency.exponentialRampToValueAtTime(95, t + 0.34);
     const f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(5200, t); f.frequency.exponentialRampToValueAtTime(380, t + 0.36); o.connect(f); f.connect(env(a, t, 0.22, 0.42)); o.start(t); o.stop(t + 0.45);
     const s = a.createOscillator(); s.type = 'sine'; s.frequency.setValueAtTime(150, t); s.frequency.exponentialRampToValueAtTime(38, t + 0.3); s.connect(env(a, t, 0.5, 0.36)); s.start(t); s.stop(t + 0.4);
+    if (power > 0.15) { const d = a.createOscillator(); d.type = 'sine'; d.frequency.setValueAtTime(95, t); d.frequency.exponentialRampToValueAtTime(24, t + 0.8); d.connect(env(a, t, 0.7 * power, 0.95)); d.start(t); d.stop(t + 1); }   // a charged shot: a deep thump under it
     const n = a.createBufferSource(), b = a.createBuffer(1, a.sampleRate * 0.3, a.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
     n.buffer = b; const bp = a.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(3200, t); bp.frequency.exponentialRampToValueAtTime(700, t + 0.25); bp.Q.value = 1.2; n.connect(bp); bp.connect(env(a, t, 0.2, 0.28)); n.start(t);
     // the rift tearing open where the bolt lands: a rising chord with a slow beat in it
@@ -401,7 +425,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   function drawDisplay(now) {
     const m = MODES[mode], A = engine.cur, n = engine.next, ante = !A || A.def.antechamber, ready = !!(n && n.ready);
     const noteOn = now < noteUntil, blink = Math.floor(now / 320) % 2;
-    const status = noteOn ? note : ante ? 'KALIBRIERE' : charge < 1 ? 'LADE' : !ready ? 'SUCHE ZIEL' : 'BEREIT';
+    const status = noteOn ? note : ante ? 'KALIBRIERE' : over >= 1 ? '\u00DCBERLADEN' : over > 0 ? 'LADE AUF' : charge < 1 ? 'LADE' : !ready ? 'SUCHE ZIEL' : 'BEREIT';
     const code = n && n.def && !ante ? dimCode(n.def.id) : '··-···', name = ready && n.def ? String(n.def.name || '').toUpperCase() : '';
     const bars = engine.mobile ? Math.round(charge * 4) * 3 : Math.round(charge * 12), sig = [mode, status, code, name, bars, status === 'SUCHE ZIEL' || status === 'KALIBRIERE' ? blink : 0].join('|');
     if (sig === dispKey) return; dispKey = sig;
@@ -426,19 +450,21 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   // ---------- firing ----------
   const blocked = () => { const ab = $('about'); return document.body.classList.contains('atlas-open') || (!!ab && !ab.hidden) || !$('veil').classList.contains('gone'); };   // (the About stays in the page once opened, hidden: only an open one counts)
   const _v = new THREE.Vector3(), _w = new THREE.Vector3();
-  function fire(cx, cy, push) {
+  function fire(cx, cy, push, power = 0) {
     if (blocked() || raise < 0.6) return;
     const A = engine.cur;
     if (!A || A.def.antechamber) { say('KALIBRIERE', 1200); dry(); return; }
     if (engine.settings.paused) { say('PAUSE', 1000); dry(); return; }
     if (charge < 1) { dry(); return; }
-    const res = engine.shoot((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1, MODES[mode].color, !!push);
+    if (push && cells < 1) { say('KEIN KERN', 1400); dry(); if (!cellTip) { cellTip = true; toast('Der Push braucht einen Energiekern: flieg in die goldenen Kerne neben der Route', 4600); } return; }
+    const res = engine.shoot((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1, MODES[mode].color, !!push, push ? 0 : power);
+    if (res && push) setCells(cells - 1);
     if (!res) { say('ZU NAH', 1200); dry(); return; }
-    charge = 0; recoilV += FLASH ? 8 : 5.2; heat = 1; sloshV += 9; lastShotWorld = A; rift = null; if (FLASH) shake = Math.max(shake, 0.45);
+    charge = 0; recoilV += (FLASH ? 8 : 5.2) + 7 * power; heat = 1; sloshV += 9; lastShotWorld = A; rift = null; if (FLASH) shake = Math.max(shake, 0.45 + 0.9 * power);
     // (a push: the bolt goes to where the white hole is struck, a short way off; the portal, at the far end of the throw, opens by itself)
     shot = { t: 0, delay: res.push ? 0.09 : res.delay, point: res.push ? res.origin : res.point, exit: res.point, radius: res.radius, push: res.push, landed: false, from: body.localToWorld(_v.copy(MUZZLE)).clone(), hist: [] };
     cross.classList.add('kick'); requestAnimationFrame(() => requestAnimationFrame(() => cross.classList.remove('kick')));
-    if (res.push) { boom(); say('PUSH', 900); recoilV += 5; } else bang(res.delay);
+    if (res.push) { boom(); say('PUSH', 900); recoilV += 5; } else { bang(res.delay, power); if (power > 0.5) say(power >= 1 ? 'VOLLE LADUNG' : 'AUFGELADEN', 900); }
   }
   const canLock = !!view.requestPointerLock;
   // A finger: a short tap shoots where it lands, a drag turns the view with it (the picture follows the finger). The first
@@ -450,10 +476,11 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     if (e.pointerType !== 'mouse') { touchOn(); fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, at: performance.now(), moved: false }); try { view.setPointerCapture(e.pointerId); } catch (err) {} return; }
     if (e.button === 2) { if (locked) fire(window.innerWidth / 2, window.innerHeight / 2, true); else fire(e.clientX, e.clientY, true); return; }
     if (e.button !== 0) return;
-    if (locked) return fire(window.innerWidth / 2, window.innerHeight / 2);
+    if (locked) { mHold = performance.now(); return; }
     if (canLock && !blocked()) { try { const p = view.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* the click fires instead */ } }
     fire(e.clientX, e.clientY);
   });
+  window.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse' || e.button !== 0 || !mHold) return; const pw = powerOf(mHold); mHold = 0; if (locked) fire(window.innerWidth / 2, window.innerHeight / 2, false, pw); });
   view.addEventListener('pointermove', (e) => {
     const f = fingers.get(e.pointerId); if (!f) return;
     const dx = e.clientX - f.x, dy = e.clientY - f.y; f.x = e.clientX; f.y = e.clientY;
@@ -464,9 +491,9 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   });
   const lift = (e, tap) => {
     const f = fingers.get(e.pointerId); if (!f) return; fingers.delete(e.pointerId);
-    if (!tap || f.moved || performance.now() - f.at > 450) return;
+    if (!tap || f.moved) return;   // (a finger held still charges the shot)
     cross.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`; tapAt = performance.now();
-    fire(e.clientX, e.clientY);
+    fire(e.clientX, e.clientY, false, powerOf(f.at));
   };
   let tapAt = -1e9;
   view.addEventListener('pointerup', (e) => lift(e, true)); view.addEventListener('pointercancel', (e) => lift(e, false));
@@ -515,7 +542,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   try { if (localStorage.getItem('portals.gun.tilt') === '1' && window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission !== 'function' && matchMedia('(pointer: coarse)').matches) setTilt(true, true); } catch (e) {}
   view.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('pointerlockchange', () => {
-    locked = document.pointerLockElement === view; document.body.classList.toggle('gun-look', locked);
+    locked = document.pointerLockElement === view; document.body.classList.toggle('gun-look', locked); mHold = 0;
     if (locked) { cross.style.transform = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px)`; if (!lockTip) { lockTip = true; toast('Du fliegst, wohin du schaust · WASD, Leertaste, C: steuern · Esc gibt die Maus frei', 6500); } }
   });
   document.addEventListener('mousemove', (e) => {
@@ -534,7 +561,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   };
   window.addEventListener('keydown', (e) => { const tag = e.target && e.target.tagName; if (tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'INPUT' || blocked()) return; setKey(e, true); });
   window.addEventListener('keyup', (e) => setKey(e, false));
-  window.addEventListener('blur', () => { keys.brake = keys.push = keys.left = keys.right = keys.up = keys.down = false; engine.throttle = 1; steer.x = steer.y = 0; });
+  window.addEventListener('blur', () => { mHold = 0; keys.brake = keys.push = keys.left = keys.right = keys.up = keys.down = false; engine.throttle = 1; steer.x = steer.y = 0; });
   let wheelAt = 0;
   window.addEventListener('wheel', (e) => { if ((e.target !== view && !locked) || blocked() || e.ctrlKey) return; const now = performance.now(); if (now - wheelAt < 170 || Math.abs(e.deltaY) < 4) return; wheelAt = now; setMode(mode + (e.deltaY > 0 ? 1 : -1)); }, { passive: true });
   window.addEventListener('keydown', (e) => {
@@ -550,6 +577,30 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     cross.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
   }, { passive: true });
   document.addEventListener('pointerleave', () => { hover = false; });
+
+  // ---------- the energy cores ----------
+  // Up to five hang beside the route of each world, to the side of it and above, inside the tube the steering allows, so each
+  // can be reached and none is met by flying straight on. They are drawn by the gun (its own sprites, laid where the place
+  // stands in the engine's picture), so nothing of the world hides them: a core behind a hill still shows where to steer.
+  const _cs = new THREE.Vector3(), _cu = new THREE.Vector3(), _ct = new THREE.Vector3();
+  const spawnCores = (A) => {
+    const path = A.path, L = path.length; let n = 0;
+    for (const c of cores) { c.on = false; c.gone = 0; }
+    for (let i = 0; i < NC; i++) {
+      const d = L * (0.16 + 0.62 * (i + 0.2 + 0.6 * Math.random()) / NC), room = engine.steerRoom(A, L - d);
+      if (room.lim < 2.5) continue;
+      path.tangentAtDist(d, _ct); _cs.crossVectors(_ct, _cu.set(0, 1, 0)); if (_cs.lengthSq() < 1e-4) _cs.set(1, 0, 0); _cs.normalize(); _cu.crossVectors(_cs, _ct).normalize();
+      const a = (0.04 + 0.92 * Math.random()) * Math.PI, rho = room.lim * (0.5 + 0.35 * Math.random()), c = cores[n++];
+      path.posAtDist(d, c.pos).addScaledVector(_cs, Math.cos(a) * rho).addScaledVector(_cu, Math.sin(a) * rho);
+      c.on = true; c.pick = THREE.MathUtils.clamp(room.wide * 0.13, 1, 3);
+    }
+  };
+  const caught = (c) => {
+    c.on = false; c.gone = 0.4; total++; try { localStorage.setItem('portals.gun.cores', String(total)); } catch (e) {}
+    const full = cells >= 3; setCells(cells + 1); chime(); say(full ? 'KERN +1' : 'PUSH GELADEN', 1000); charge = 1; heat = Math.max(heat, 0.55); sloshV += 5;
+    chip.classList.add('got'); clearTimeout(chipT); chipT = setTimeout(() => chip.classList.remove('got'), 260);
+    try { if (navigator.vibrate) navigator.vibrate(18); } catch (e) {}
+  };
 
   // ---------- arrivals: the stamp, the flash of a crossing through a shot portal, the trail for 'ZURÜCK' ----------
   const onWorld = engine.events.world; let stampT = 0;
@@ -586,8 +637,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const A = engine.cur, live = !!A && !A.def.antechamber && !blocked();
     if (locked && blocked()) { try { document.exitPointerLock(); } catch (e) {} }
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
-    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal · PUSH: wegschleudern · Wischen oder NEIGEN: umschauen' : 'Linksklick: Portal · Rechtsklick: Push · WASD: fliegen · Mausrad: Ziel', 6000); }
-    cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready));
+    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal (halten l\u00E4dt auf) · PUSH: wegschleudern · Wischen oder NEIGEN: umschauen' : 'Linksklick: Portal (halten l\u00E4dt auf) · Rechtsklick: Push · WASD: fliegen · Mausrad: Ziel', 6000); }
+    cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready)); chip.classList.toggle('on', live && raise > 0.6);
     if (lostAt) return;
     if (engine.stats) { engine.stats.gunLevel = level; engine.stats.gunFps = Math.round(fpsE); }   // for the debug panel (?debug=1)
     if (raise > 0.9 && gap < 250 && !engine.settings.paused && document.visibilityState === 'visible') {
@@ -601,17 +652,28 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
 
     // charge, heat, colour
     charge = Math.min(1, charge + dt / cooldown); heat = Math.max(0, heat - dt * 1.6);
+    // a shot held back: the mouse button, or a finger that has not moved
+    { let at = locked ? mHold : 0; for (const f of fingers.values()) if (!f.moved && (!at || f.at < at)) at = f.at;
+      over = at && live && charge >= 1 ? powerOf(at) : 0; cross.classList.toggle('over', over > 0);
+      if (over > 0 && !hum) { const a = audio(); if (a) { const o = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain(); o.type = 'sawtooth'; f.type = 'lowpass'; f.frequency.value = 1100; g.gain.value = 0.03; o.connect(f); f.connect(g); g.connect(a.destination); o.start(); hum = o; } }
+      if (hum) { if (over > 0) hum.frequency.value = 70 + 320 * over; else { try { hum.stop(); } catch (e) {} hum = null; } } }
     colNow.lerp(colTo, 1 - Math.exp(-dt * 7)); for (const c of tinted) c.copy(colNow);
     const ready = charge >= 1 && !!(engine.next && engine.next.ready), pulse = 0.5 + 0.5 * Math.sin(t * (ready ? 2.2 : 9));
-    glow.emissiveIntensity = 1.2 + 1.6 * charge * (0.7 + 0.3 * pulse) + 7 * heat;
+    glow.emissiveIntensity = 1.2 + 1.6 * charge * (0.7 + 0.3 * pulse) + 7 * heat + 6 * over;
     fluidMat.uniforms.uTime.value = t; fluidMat.uniforms.uLevel.value = 0.3 + 0.62 * charge; fluidMat.uniforms.uHot.value = heat;
-    tipGlow.material.opacity = 0.18 + 0.4 * charge * (0.6 + 0.4 * pulse) + heat; tipGlow.scale.setScalar(0.035 + 0.03 * charge + 0.22 * heat * heat);
+    tipGlow.material.opacity = 0.18 + 0.4 * charge * (0.6 + 0.4 * pulse) + heat + over; tipGlow.scale.setScalar(0.035 + 0.03 * charge + 0.22 * heat * heat + 0.13 * over * (1 + 0.15 * Math.sin(t * 60)));
     tipCore.scale.setScalar(0.4 + 0.8 * charge + 2.5 * heat); tipCore.visible = charge > 0.25 || heat > 0;
     vialGlow.material.opacity = 0.1 + 0.16 * charge; vialLight.intensity = 0.006 + 0.012 * charge + 0.03 * heat; muzzleLight.intensity = 0.5 * heat * heat;
     if (tilt.on && tilt.ref && tilt.now) {
       let dy = tilt.now[0] - tilt.ref[0]; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const dp = tilt.now[1] - tilt.ref[1], kt = 1 - Math.exp(-dt * 18);
       let gy = look.gy || 0; gy += Math.atan2(Math.sin(dy - gy), Math.cos(dy - gy)) * kt; look.gy = gy; look.gp = (look.gp || 0) + (dp - (look.gp || 0)) * kt;
     }
+    // The view comes back to the flight's own once it is let go: with no finger down (and the mouse not taken, the phone
+    // not turned to look) a view left aside would drift the viewer to the wall of the tube and hold them there.
+    if (!locked && !tilt.on && fingers.size === 0 && (look.yaw || look.pitch)) {
+      restT += dt;
+      if (restT > 0.5) { const kr = Math.exp(-dt * 1.7); let y = Math.atan2(Math.sin(look.yaw), Math.cos(look.yaw)) * kr, pt = look.pitch * kr; look.yaw = Math.abs(y) < 0.002 ? 0 : y; look.pitch = Math.abs(pt) < 0.002 ? 0 : pt; }
+    } else restT = 0;
     // springs: recoil and the fluid's slosh
     recoilV += (-recoil * 190 - recoilV * 17) * dt; recoil += recoilV * dt;
     sloshV += (-slosh * 60 - sloshV * 4.5) * dt; slosh += sloshV * dt; fluidMat.uniforms.uSlosh.value = THREE.MathUtils.clamp(slosh, -1, 1) * 0.12;
@@ -629,7 +691,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const sp = Math.min(1, engine.speed / 20), down = (1 - raise) * (1 - raise);
     const fit = THREE.MathUtils.clamp(cam.aspect / 1.3, 0.45, 1); gun.scale.setScalar(fit);   // a tall, narrow window gets a smaller gun, so its display stays in the picture
     const bx = Math.min(0.2, BASE.x * Math.tan(cam.fov * Math.PI / 360) * cam.aspect * -BASE.z);   // half way to the right edge, whatever the window's shape
-    gun.position.set(bx + aimX * 0.016 + swayX * 0.5 + 0.0016 * Math.sin(t * 0.9), BASE.y * (0.55 + 0.45 * fit) + aimY * 0.012 - down * 0.34 + 0.0022 * Math.sin(t * 1.3 + 1) + 0.0012 * sp * Math.sin(t * 7.3), BASE.z + recoil * 0.05 + swayX * 0.1);
+    gun.position.set(bx + aimX * 0.016 + swayX * 0.5 + 0.0016 * Math.sin(t * 0.9) + over * 0.0025 * Math.sin(t * 83), BASE.y * (0.55 + 0.45 * fit) + aimY * 0.012 - down * 0.34 + 0.0022 * Math.sin(t * 1.3 + 1) + 0.0012 * sp * Math.sin(t * 7.3), BASE.z + recoil * 0.05 + swayX * 0.1);
     gun.rotation.set(0.07 + aimY * 0.17 + recoil * 0.5 - down * 0.9 - swayY * 1.2, 0.4 - aimX * 0.24 + swayX * 2.2, -0.06 - aimX * 0.05 + 0.008 * Math.sin(t * 0.7) + swayX * 1.5, 'YXZ');
     gun.updateMatrixWorld(true);
 
@@ -687,6 +749,25 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
         }
       }
     }
+    // the cores: set out when a world is new, caught when flown into (the last metres they come to meet the viewer), drawn where they stand
+    if (live && A !== coreWorld) { coreWorld = A; spawnCores(A); if (!coreTipAt) coreTipAt = now + 9000; }
+    if (coreTipAt > 0 && now > coreTipAt && live) { coreTipAt = -1; toast('Goldene Kerne neben der Route: hinfliegen und einsammeln, jeder l\u00E4dt einen Push', 5200); }
+    for (const c of cores) {
+      c.halo.material.opacity = c.heart.material.opacity = c.rg.material.opacity = 0;
+      if (!c.on && c.gone <= 0) continue;
+      if (!A || A !== coreWorld) { c.on = false; c.gone = 0; continue; }
+      let dist = _w.copy(c.pos).sub(ec.position).length();
+      if (c.on && dt > 0 && !engine.settings.paused) { if (dist < c.pick * 1.6) { c.pos.lerp(ec.position, 1 - Math.exp(-dt * 4)); dist = _w.copy(c.pos).sub(ec.position).length(); } if (dist < c.pick) caught(c); }
+      if (c.gone > 0 && !c.on) c.gone -= dt;
+      if (level === 0 && !INLINE) continue;
+      _v.copy(c.pos).project(ec); if (_v.z >= 1 || dist < 0.05) continue;
+      const dd = Math.min(dist, 300), g = c.on ? 0 : 1 - Math.max(0, c.gone) / 0.4, al = (c.on ? THREE.MathUtils.clamp(1.5 - dist / 260, 0.3, 1) : 1 - g) * raise;
+      _v.set(_v.x, _v.y, 0.5).unproject(cam).sub(cam.position).normalize().multiplyScalar(dd);
+      const sz = Math.min(Math.max(c.pick * 0.55 * dd / Math.max(dist, 1e-3), dd * 0.011), dd * 0.05) * (1 + 0.14 * Math.sin(t * 4 + c.ph)) * (1 + 3 * g);
+      c.halo.position.copy(_v); c.halo.scale.setScalar(sz * 5.5); c.halo.material.opacity = 0.5 * al;
+      c.heart.position.copy(_v); c.heart.scale.setScalar(sz * 1.5); c.heart.material.opacity = al;
+      c.rg.position.copy(_v); c.rg.scale.setScalar(sz * (3 + 0.5 * Math.sin(t * 2.3 + c.ph))); c.rg.material.opacity = 0.75 * al;
+    }
     // the white hole of a push, for a little over two seconds, where it stands in this camera's picture
     holeCore.material.opacity = holeHalo.material.opacity = 0; for (const r of holeRings) r.material.opacity = 0; ejecta.visible = false;
     if (blast) {
@@ -714,5 +795,5 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     engine.overlay = () => step(performance.now());
   } else requestAnimationFrame(frame);
 
-  return { setMode, fire, step, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
+  return { setMode, fire, step, cores, get cells() { return cells; }, set cells(v) { setCells(v); }, get total() { return total; }, get over() { return over; }, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
 }

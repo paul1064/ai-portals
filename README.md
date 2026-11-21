@@ -54,6 +54,7 @@ This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself 
 | Input | What it does |
 |---|---|
 | Left click | Open a portal where the crosshair points; the flight turns into it |
+| Hold, then let go | A charged shot: the portal stands further off, is wider and is flown to faster (on a phone: hold a finger still) |
 | Right click | The push: a white hole where the crosshair points hurls you back and up, to a portal at the end of the throw |
 | Mouse wheel, Q / E | Turn the dial: Zufall, Irdisch, Fremd, Bizarr, Favorit, Zurück |
 | 1 to 6 | The dial's positions by number |
@@ -61,6 +62,7 @@ This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself 
 | Looking | You fly where you look: the flight drifts toward it, inside a tube round the world's own route |
 | W A S D, arrow keys | W pushes on, S (or Shift) brakes to a hover, A and D slip sideways |
 | Space / C | Rise / sink |
+| Golden cores | They hang beside the route of every world. Fly into one and it loads a push (three at the most; you start with one). The count at the upper right is every core you ever caught |
 | Enter, M, N | Pause, sound, hurry to the next portal (with the gun on, space, S and the right arrow fly instead; G alone is the gentle camera) |
 | Touch screen | Tap to shoot where you tap, drag to look round; buttons at the lower left turn the dial, brake, (NEIGEN) let you look round by turning the phone itself, and fire the push |
 

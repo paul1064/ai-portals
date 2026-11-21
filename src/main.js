@@ -1,3 +1,4 @@
+import { dimCode, worldOfCode } from './gun/dim.js';
 import { Engine } from './core/engine.js';
 import * as REGISTRY from './worlds/index.js';
 const WORLDS = REGISTRY.WORLDS, SUITES = REGISTRY.SUITES || [];   // a tree whose own registry has no list of journeys still loads
@@ -154,7 +155,8 @@ async function boot() {
   };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && engine.lost) setTimeout(() => { if (engine.lost) location.reload(); }, 1500); });
 
-  const start = q.get('start');
+  const dimWorld = q.has('dim') ? worldOfCode(q.get('dim'), defs) : null;   // a link by dimension code (?dim=KX-204)
+  const start = q.get('start') || (dimWorld && dimWorld.id);
   // the opening world (the choosing is firstWorld in core/pick.js, so tools/ordertest.mjs runs the same code): one of the
   // openers this viewer has not seen (on a calm journey a calm one: the calm openers, or any calm world when no opener is
   // calm); when every opener has been seen, the best of the worlds not seen; then the openers seen longest ago
@@ -382,6 +384,7 @@ async function boot() {
   // the index of worlds (its button on the bar, I, #worlds, or hold the options button). It marks the worlds seen (not on a journey link, which keeps no memory) and the favourites.
   const atlas = setupAtlas({ worlds: WORLDS, suites: SUITES, engine, setPaused, optionsButton: $('b-more'), onReport: () => report(), seen, hearts, onHeart: (id) => heart(id, false), onAbout: aboutOn ? about : null });
   $('b-worlds').onclick = () => atlas.toggle();   // the gallery button on the bar
+  if (q.has('dim') && !dimWorld) setTimeout(() => toast('Dimension ' + String(q.get('dim')).slice(0, 12) + ' gibt es nicht: du startest irgendwo', 5000), 2500);
   if (engine.opts.shots) import('./gun/portal-gun.js').then((m) => { window.__gun = m.setupGun({ engine, hearts, toast, flash: engine.opts.flash, soundOn: () => bSound.classList.contains('on') }); }).catch((e) => console.warn('portal gun', e));
   $('b-next').onclick = () => engine.skip();
   const photo = () => {
@@ -409,7 +412,7 @@ async function boot() {
     const d = engine.cur.def, named = canHeart(d), name = named ? shownTitle(engine.cur) : 'Portals', url = worldLink(named ? d.id : '');
     // on a phone the share sheet is the way to send a link; elsewhere it is copied
     if (coarse && navigator.share) { try { await navigator.share({ title: named ? name + ' · Portals' : 'Portals', url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
-    toast((await copyText(url)) ? (named ? 'Link to ' + name + ' copied' : 'Link copied') : 'Could not copy the link');
+    toast((await copyText(url)) ? (named ? 'Link to ' + name + ' copied (dimension ' + dimCode(d.id) + ')' : 'Link copied') : 'Could not copy the link');
   };
   $('b-link').onclick = async () => {
     // the worlds flown so far, in order; pressed in the antechamber, before any world, the link opens on the world waiting behind its portal
@@ -419,7 +422,7 @@ async function boot() {
   $('sh-photo').onclick = () => { shareMenu(false); photo(); };
   // a link that named its opening world has done its work: out of the address bar with it, so that the address copied
   // later (or a reload) does not hand on a world long gone by. A journey link keeps its session and its worlds.
-  if (!plain && /[?&]start=/.test(location.search)) { try { history.replaceState(null, '', location.pathname + location.search.replace(/([?&])start=[^&]*&?/, '$1').replace(/[?&]$/, '') + location.hash); } catch (e) {} }
+  if (!plain && /[?&](start|dim)=/.test(location.search)) { try { history.replaceState(null, '', location.pathname + location.search.replace(/([?&])(start|dim)=[^&]*&?/g, '$1').replace(/[?&]$/, '') + location.hash); } catch (e) {} }
   // the controls show on any movement and fade when left alone (they wait longer while the options are open)
   let idle = 0;
   const rest = () => { clearTimeout(idle); document.body.classList.remove('active'); document.body.classList.add('idle'); shareMenu(false); };

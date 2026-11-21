@@ -950,7 +950,7 @@ export class Engine {
     if (A.feed) A.portal.group.visible = remaining < 3 || A.world.portal.show !== false;   // the last metres are the crossing's
     else if (A.drawWithin != null) { A.portal.group.visible = remaining <= A.drawWithin; if (A.drawIn) A.portal.setGrow(0.04 + 0.96 * smoothstep(0, A.drawIn, A.drawWithin - remaining)); }
     if (A.shot) { const sh = A.shot, k = (sh.t - sh.delay) / 0.6; sh.t += dt; A.portal.group.visible = k > 0;
-      if (k > 0) { const x = Math.min(k, 1) - 1; A.portal.setGrow(k >= 1 ? 1 : Math.max(0.03, 1 + 2.4 * x * x * x + 1.4 * x * x)); } }   // opens with a small overshoot
+      if (k > 0) { const x = Math.min(k, 1) - 1; A.portal.setGrow((sh.size || 1) * (k >= 1 ? 1 : Math.max(0.03, 1 + 2.4 * x * x * x + 1.4 * x * x))); } }   // opens with a small overshoot
     A.portal.setTime(this.time); A.portal.setReveal(this.reveal); A.portal.setNear?.(1 - smoothstep(4, 30, remaining));
     this.extras.update(dt, A, B, cam, uw, remaining, this.speed, stand);
     this.style.update(dt, A, uw, frozen);
@@ -1039,6 +1039,10 @@ export class Engine {
   // own gaze, so the flight looking at a set piece by itself moves nobody) and with the keys (steer.x right, steer.y up). The
   // tube is a little over two portal radii wide, narrower on a short route, and closes to half a radius at the portal so
   // the crossing is always inside the opening; downward there is little room, since the route often runs just above the ground.
+  steerRoom(A, remaining) {
+    const r = Math.min(A.portal.hx, A.portal.hy) || 7, wide = Math.min(clamp(r * 2.3, 4, 24), A.path.length * 0.25);
+    return { r, wide, lim: r * 0.5 + (wide - r * 0.5) * smoothstep(r * 1.2, r * 6, remaining), down: Math.min(1.2, wide * 0.15) };
+  }
   _steer(A, dt, remaining) {
     const st = this.steer, off = this.off || (this.off = new THREE.Vector3()), cam = this.camera, L = A.path.length;
     const r = Math.min(A.portal.hx, A.portal.hy) || 7, wide = Math.min(clamp(r * 2.3, 4, 24), L * 0.25);
@@ -1069,14 +1073,15 @@ export class Engine {
   // push: the other shot. A white hole is struck where the viewer aims and hurls them the other way: the route runs back and
   // up from where they are, fast, to a portal at its far end, and the view turns round in flight to find it. The answer then
   // also names where the white hole stands (origin).
-  shoot(nx, ny, color, push) {
+  // power (0..1, a shot held back before it is let go): the opening stands further off, is flown to faster and is wider.
+  shoot(nx, ny, color, push, power = 0) {
     if (!this.canShoot()) return null;
     const A = this.cur, cam = this.camera, L = A.path.length, was = A.shot;
     const dir = new THREE.Vector3(nx, ny, 0.5).unproject(cam).sub(cam.position).normalize();
     if (this.look) { this.camQuat.copy(cam.quaternion); this.look.yaw = this.look.pitch = 0; if (this.look.absorbed) this.look.absorbed(); }   // the flight takes over the way the viewer was looking
-    const v0 = was ? was.v : L / A.duration, P = was ? A.portal : A.shotPortal, r = P.hx;
+    const v0 = was ? was.v : L / A.duration, P = was ? A.portal : A.shotPortal, size = push ? 1 : 1 + 0.6 * clamp(power, 0, 1), r = P.hx * size;
     const aim = push ? dir.clone().negate().addScaledVector(Y, 0.32).normalize() : dir;   // which way the flight goes: at the mark, or flung from it
-    let D = clamp(Math.max(this.speed, v0) * 4.2, r * 3.5, r * 14) * (push ? 1.5 : 1), surface = false;
+    let D = clamp(Math.max(this.speed, v0) * 4.2, r * 3.5, r * 14) * (push ? 1.5 : 1 + 0.5 * (size - 1) / 0.6), surface = false;
     const hit = this._shotHit(cam.position, aim, r * 1.3, D + r * 8);   // (looked for well past the opening: ground met at a shallow angle a little further on still cuts into it)
     const P0 = cam.position.clone(), T0 = A.path.tangentAtDist(A.dist, new THREE.Vector3()), P1 = P0.clone();
     if (this.off) this.off.set(0, 0, 0);   // the new route starts where the viewer is, offset and all
@@ -1095,7 +1100,7 @@ export class Engine {
     if (!was) { const old = A.portal; old.group.removeFromParent(); old.dispose(); A.portal = P; A.shotPortal = null; }
     if (color) P._shared.uColor.value.set(color);
     A.portalSpec = { shape: 'circle', radius: r, style: 'vortex', lens: 0.7 };
-    A.path = path; A.dist = 0; A.duration = path.length / (v0 * (push ? 1.7 : 1.15)); A.pace = null; A.pois = [];
+    A.path = path; A.dist = 0; A.duration = path.length / (v0 * (push ? 1.7 : 1.15 + 0.75 * (size - 1))); A.pace = null; A.pois = [];
     if (push) this.speed = Math.max(this.speed, v0) * 3.4;   // the hurl: at once, not eased up to
     A.cam.ahead = clamp(path.length * 0.3, r, 40);
     A.exit = path.frameAt(1, undefined, true); A.exitInv = A.exit.clone().invert();
@@ -1103,7 +1108,7 @@ export class Engine {
     A.feed = false; A.full = true; A.goFull = false; A.drawWithin = null; A.drawIn = 0; A.revealDist = 1e9;
     this.reveal = 0; this.boost = 0;
     const delay = push ? 0.05 : clamp(D / 160, 0.12, 0.32);
-    A.shot = { t: 0, delay, u0, L0, v: v0, push: !!push };
+    A.shot = { t: 0, delay, u0, L0, v: v0, push: !!push, size };
     return { point: P1, delay, dist: D, surface, radius: r, push: !!push, origin: push ? P0.clone().addScaledVector(dir, r * 3.2) : null };
   }
   // the first solid thing along a ray, as a distance, or null. A few milliseconds at the most: what is not reached in time is flown through.
