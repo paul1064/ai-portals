@@ -4,7 +4,13 @@
 
 **Play this copy in the browser: [paul1064.github.io/ai-portals](https://paul1064.github.io/ai-portals/)** (a desktop browser with a mouse; click once to take the mouse, press S for sound).
 
-[![A hand-held portal gun in the foreground; a green swirling portal hangs beside the Eiffel Tower at dusk](readme/portal-gun.jpg)](https://paul1064.github.io/ai-portals/)
+[![The portal gun in the foreground; a wide magenta portal opens on a sea with red-sailed boats](readme/gun-1.jpg)](https://paul1064.github.io/ai-portals/)
+
+<table><tr>
+<td width="33%"><img src="readme/gun-2.jpg" alt="A green swirling portal over a red line-drawn shore, the gun set to Zufall" width="100%"></td>
+<td width="33%"><img src="readme/gun-3.jpg" alt="The gun, set to Bizarr, over ribbons of water in a violet sky" width="100%"></td>
+<td width="33%"><img src="readme/gun-4.jpg" alt="The gun before a paper mountain under a row of moons" width="100%"></td>
+</tr></table>
 
 The rest of this page is the original's README, apart from the two sections about the gun.
 
