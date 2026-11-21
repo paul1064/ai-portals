@@ -5,7 +5,8 @@
 //   wheel, Q / E   turn the dial: which kind of world waits behind the next portal
 //   1 .. 6         the dial's positions by number
 //   first click    takes the mouse (Esc gives it back): from then on the mouse looks round, as in a first-person game
-//   W A S D         fly: W pushes on, S brakes to a hover, A and D slip sideways; space rises, left Shift or C sinks
+//   W, S (or D)     W pushes on, S brakes to a hover (D does the same); Shift is the hyperboost. Where the flight goes is
+//                   the sight's business alone: it stands in the middle of the picture, and the flight follows it
 //   arrow keys      turn the view, as the mouse does (for a touchpad, which is dead while keys are held)
 //   looking         the flight goes where the middle of the picture points, inside a tube round the world's route (engine._steer)
 //   cores           golden energy cores hang beside the route of every world: flown into, each loads one push (three at the most)
@@ -392,7 +393,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   };
   engine.chooser = () => pickFor(MODES[mode]);
   const look = engine.look = { yaw: 0, pitch: 0 }; engine.throttle = 1;
-  let locked = false, lockTip = false; const keys = { brake: false, push: false };
+  let locked = false, lockTip = false; const keys = { brake: false, push: false, hyper: false };
+  const thr = () => (keys.brake ? 0.06 : keys.hyper ? 6 : keys.push ? 2.4 : 1);   // the flight's pace: braked, hyperboost, pushed on, its own
   // charging (a shot held back), and the cores: how many pushes are loaded (one to begin with), how many cores were ever caught
   let mHold = 0, over = 0, hum = null, restT = 0, cells = 1, total = 0, coreWorld = null, coreTipAt = 0, cellTip = false, chipT = 0;
   try { total = Math.max(0, parseInt(localStorage.getItem('portals.gun.cores'), 10) || 0); } catch (e) {}
@@ -541,7 +543,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   view.addEventListener('pointerup', (e) => lift(e, true)); view.addEventListener('pointercancel', (e) => lift(e, false));
   const bMode = pad.querySelector('#gun-b-mode'), bBrake = pad.querySelector('#gun-b-brake');
   bMode.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); bMode.classList.add('down'); setTimeout(() => bMode.classList.remove('down'), 140); if (!blocked()) setMode(mode + 1); });
-  const brake = (on) => (e) => { e.preventDefault(); e.stopPropagation(); bBrake.classList.toggle('down', on); keys.brake = on; engine.throttle = keys.brake ? 0.06 : keys.push ? 2.4 : 1; if (on) { try { bBrake.setPointerCapture(e.pointerId); } catch (err) {} } };
+  const brake = (on) => (e) => { e.preventDefault(); e.stopPropagation(); bBrake.classList.toggle('down', on); keys.brake = on; engine.throttle = thr(); if (on) { try { bBrake.setPointerCapture(e.pointerId); } catch (err) {} } };
   bBrake.addEventListener('pointerdown', brake(true)); for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) bBrake.addEventListener(ev, brake(false));
   pad.addEventListener('contextmenu', (e) => e.preventDefault());
   // NEIGEN: the phone's own orientation turns the view. The sensor's three angles are made into the way the back of the phone
@@ -587,7 +589,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   view.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('pointerlockchange', () => {
     locked = document.pointerLockElement === view; document.body.classList.toggle('gun-look', locked); mHold = 0;
-    if (locked) { cross.style.transform = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px)`; if (!lockTip) { lockTip = true; toast('Du fliegst, wohin das Fadenkreuz zeigt · WASD, Leertaste, Shift: steuern · Pfeiltasten: umschauen · Esc gibt die Maus frei', 7500); } }
+    if (locked) { cross.style.transform = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px)`; if (!lockTip) { lockTip = true; toast('Du fliegst, wohin das Fadenkreuz zeigt · W: schneller · S: langsamer · Shift: Hyperboost · Pfeiltasten: umschauen · Esc gibt die Maus frei', 7500); } }
   });
   document.addEventListener('mousemove', (e) => {
     if (!locked) return;
@@ -600,17 +602,16 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     // X held and let go is the charged shot too (a touchpad's tap cannot be held)
     if (c === 'KeyZ') { if (on && !e.repeat) slowMo(); return; }   // slow motion: five seconds for one core
     if (c === 'KeyX') { if (on) { if (!e.repeat && !mHold) mHold = performance.now(); } else if (mHold) { const pw = powerOf(mHold); mHold = 0; fire(window.innerWidth / 2, window.innerHeight / 2, false, pw); } return; }
-    if (c === 'KeyS') keys.brake = on; else if (c === 'KeyW') keys.push = on;
-    else if (c === 'KeyA') keys.left = on; else if (c === 'KeyD') keys.right = on;
-    else if (c === 'Space') keys.up = on; else if (c === 'KeyC' || c === 'ShiftLeft') keys.down = on;
+    if (c === 'KeyS' || c === 'KeyD') keys.brake = on; else if (c === 'KeyW') keys.push = on;
+    else if (c === 'ShiftLeft' || c === 'ShiftRight') keys.hyper = on;
     else if (c.startsWith('Arrow')) { keys[c] = on; if (on) keyLook = true; }   // the arrows turn the view
     else return;
     if (on && (c === 'Space' || c.startsWith('Arrow'))) e.preventDefault();
-    engine.throttle = keys.brake ? 0.06 : keys.push ? 2.4 : 1; steer.x = (keys.right ? 1 : 0) - (keys.left ? 1 : 0); steer.y = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
+    engine.throttle = thr();
   };
   window.addEventListener('keydown', (e) => { const tag = e.target && e.target.tagName; if (tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'INPUT' || blocked()) return; setKey(e, true); });
   window.addEventListener('keyup', (e) => setKey(e, false));
-  window.addEventListener('blur', () => { mHold = 0; keys.brake = keys.push = keys.left = keys.right = keys.up = keys.down = keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.ArrowDown = false; engine.throttle = 1; steer.x = steer.y = 0; });
+  window.addEventListener('blur', () => { mHold = 0; keys.brake = keys.push = keys.hyper = keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.ArrowDown = false; engine.throttle = 1; steer.x = steer.y = 0; });
   let wheelAt = 0;
   window.addEventListener('wheel', (e) => { if ((e.target !== view && !locked) || blocked() || e.ctrlKey) return; const now = performance.now(); if (now - wheelAt < 170 || Math.abs(e.deltaY) < 4) return; wheelAt = now; setMode(mode + (e.deltaY > 0 ? 1 : -1)); }, { passive: true });
   window.addEventListener('keydown', (e) => {
@@ -641,7 +642,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       (it.done() ? '<button class="done" disabled>\u2713 GEBAUT</button>' : '<button data-i="' + i + '"' + (bank < it.cost() ? ' disabled' : '') + '>\u25C6 ' + it.cost() + '</button>') + '</div>').join('') + '<div class="row"><div><b>ZEITRENNEN</b><span>60 Sekunden: jede Welt z\u00E4hlt 10, jeder Kern 5' + (raceBest ? '. Bestwert ' + raceBest : '') + '</span></div><button data-i="race">START</button></div>' + '<button class="close" data-i="x">SCHLIESSEN</button>';
   };
   const openShop = (on) => {
-    shopOpen = on; shop.hidden = !on; engine.throttle = on ? 0.06 : keys.brake ? 0.06 : keys.push ? 2.4 : 1;   // (the flight all but stands while the workshop is open)
+    shopOpen = on; shop.hidden = !on; engine.throttle = on ? 0.06 : thr();   // (the flight all but stands while the workshop is open)
     if (on) { mHold = 0; drawShop(); try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {} }
   };
   shop.addEventListener('click', (e) => {
@@ -731,7 +732,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const A = engine.cur, live = !!A && !A.def.antechamber && !blocked();
     if (locked && blocked()) { try { document.exitPointerLock(); } catch (e) {} }
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
-    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal (halten l\u00E4dt auf) · PUSH: wegschleudern · Wischen oder NEIGEN: umschauen' : 'Linksklick: Portal (halten oder X halten l\u00E4dt auf) · Rechtsklick: Push · WASD: fliegen · Mausrad: Ziel', 6000); }
+    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal (halten l\u00E4dt auf) · PUSH: wegschleudern · Wischen oder NEIGEN: umschauen' : 'Linksklick: Portal (halten oder X halten l\u00E4dt auf) · Rechtsklick: Push · W/S: schneller/langsamer · Shift: Hyperboost · Mausrad: Ziel', 6000); }
     cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready)); chip.classList.toggle('on', live && raise > 0.6);
     if (lostAt) return;
     if (engine.stats) { engine.stats.gunLevel = level; engine.stats.gunFps = Math.round(fpsE); }   // for the debug panel (?debug=1)

@@ -60,9 +60,8 @@ This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself 
 | 1 to 6 | The dial's positions by number |
 | First click | Takes the mouse: from then on it looks round, as in a first-person game (Esc gives it back) |
 | Looking | You fly where you look: the flight drifts toward it, inside a tube round the world's own route |
-| W A S D | W pushes on, S brakes to a hover, A and D slip sideways |
+| W / S (or D) / Shift | W pushes on, S brakes to a hover, Shift is the hyperboost. Where you fly is the sight's business: it stands in the middle of the picture |
 | Arrow keys | Turn the view, as the mouse does (handy with a touchpad, which is dead while keys are held) |
-| Space / left Shift or C | Rise / sink |
 | V | Record ten seconds of the flight as a video, without sound (also in the share menu) |
 | Golden cores | They hang beside the route of every world. Look at one for a moment and it is marked (its ring turns white): the flight then closes on it by itself. Caught, it loads a push (three at the most; you start with one) and is one more to spend. The count at the upper right is what you have |
 | The log | Every dimension you reach for the first time is counted (the stamp on arrival says how many of all) and brings a core |
