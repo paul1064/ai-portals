@@ -107,7 +107,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const hose = M({ color: 0x0b0b0c, metalness: 0.1, roughness: 0.55 });
   const orange = M({ color: 0xff5a14, metalness: 0.55, roughness: 0.34 });
   const hoseO = M({ color: 0xe8540f, metalness: 0, roughness: 0.5 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.04, transparent: true, opacity: 0.2, envMapIntensity: 2.2, clearcoat: 1, clearcoatRoughness: 0.03, depthWrite: false });
+  const glass = engine.mobile ? new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.2, envMapIntensity: 2.2, depthWrite: false })
+    : new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.04, transparent: true, opacity: 0.2, envMapIntensity: 2.2, clearcoat: 1, clearcoatRoughness: 0.03, depthWrite: false });
   const glow = M({ color: 0x050805, emissive: new THREE.Color(MODES[0].color), emissiveIntensity: 2.4, roughness: 0.4, metalness: 0 });   // every lit strip and lens follows the dial's colour
 
   // ---------- geometry helpers: the gun points along -Z, up is +Y ----------
@@ -232,8 +233,10 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const tipGlow = sprite(body, 0.05, 0.5); tipGlow.position.copy(MUZZLE);
   const tipCore = add(new THREE.SphereGeometry(0.0038, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), MUZZLE.x, MUZZLE.y, MUZZLE.z);
   const vialGlow = sprite(body, 0.11, 0.22); vialGlow.position.set(0, VY, VZ);
-  const vialLight = new THREE.PointLight(MODES[0].color, 0.012, 0.4, 2); vialLight.position.set(0, VY + 0.01, VZ); body.add(vialLight);
-  const muzzleLight = new THREE.PointLight(MODES[0].color, 0, 0.8, 2); muzzleLight.position.copy(MUZZLE); body.add(muzzleLight);
+  // (a phone goes without the two small lamps: each light is paid for in every material's shader; the glows stand in for them)
+  const lamp = (i, d) => (engine.mobile ? { intensity: 0, color: new THREE.Color(), position: new THREE.Vector3() } : body.add(new THREE.PointLight(MODES[0].color, i, d, 2)).children[body.children.length - 1]);
+  const vialLight = lamp(0.012, 0.4); vialLight.position.set(0, VY + 0.01, VZ);
+  const muzzleLight = lamp(0, 0.8); muzzleLight.position.copy(MUZZLE);
   const bolt = sprite(scene, 0.1, 0); const boltCore = sprite(scene, 0.04, 0); boltCore.material.color.set(0xffffff);
   const trail = Array.from({ length: 14 }, () => sprite(scene, 0.05, 0));
   const burst = sprite(scene, 1, 0);
@@ -255,6 +258,12 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const colNow = new THREE.Color(MODES[mode].color), colTo = new THREE.Color(MODES[mode].color);
   const worldsById = new Map(engine.registry.map((d) => [d.id, d])), trailIds = [];
   let shake = 0, warp = 0, arrived = 0, rift = null, ringT = 9;
+  // HOW MUCH THE GUN MAY COST. Three levels: 2 the whole show; 1 a coarser picture and half the sparks and streaks; 0 a coarse
+  // picture drawn every other frame with no sparks or streaks. A phone starts low (0 where the engine guessed 'low'), a desktop
+  // at 2. The frame rate decides from there: under 40 a second for a few seconds takes a level away; a steady 56 gives one
+  // back, once, and never to a phone the engine put on 'low'.
+  let level = engine.mobile ? (engine.tier === 'low' ? 0 : 1) : 2, levelOn = -1, fpsE = 60, lowT = 0, highT = 0, noRaise = 0, drops = 0, frameNo = 0, prevNow = 0;
+  const pixelRatio = () => { const d = window.devicePixelRatio || 1; return level === 2 ? Math.min(d, engine.mobile ? 1.25 : 1.5) : level === 1 ? Math.min(d, engine.mobile ? 0.85 : 1) : Math.min(d, 0.7); };
   let charge = 1, raise = 0, recoil = 0, recoilV = 0, heat = 0, slosh = 0, sloshV = 0, knobAng = 0, mx = 0.25, my = -0.1, aimX = 0, aimY = 0, hover = false, note = '', noteUntil = 0, shot = null, lastShotWorld = null, dispKey = '', swayX = 0, swayY = 0;
   const lastQ = new THREE.Quaternion(); let lastQSet = false;
 
@@ -308,27 +317,28 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
 
   // ---------- the display ----------
   const hexA = (c, a) => { const k = new THREE.Color(c); return `rgba(${Math.round(k.r * 255)},${Math.round(k.g * 255)},${Math.round(k.b * 255)},${a})`; };
+  const blur = (px) => (engine.mobile ? 0 : px);   // a glow round every letter is dear on a phone's 2D canvas
   function drawDisplay(now) {
     const m = MODES[mode], A = engine.cur, n = engine.next, ante = !A || A.def.antechamber, ready = !!(n && n.ready);
     const noteOn = now < noteUntil, blink = Math.floor(now / 320) % 2;
     const status = noteOn ? note : ante ? 'KALIBRIERE' : charge < 1 ? 'LADE' : !ready ? 'SUCHE ZIEL' : 'BEREIT';
     const code = n && n.def && !ante ? dimCode(n.def.id) : '··-···', name = ready && n.def ? String(n.def.name || '').toUpperCase() : '';
-    const bars = Math.round(charge * 12), sig = [mode, status, code, name, bars, status === 'SUCHE ZIEL' || status === 'KALIBRIERE' ? blink : 0].join('|');
+    const bars = engine.mobile ? Math.round(charge * 4) * 3 : Math.round(charge * 12), sig = [mode, status, code, name, bars, status === 'SUCHE ZIEL' || status === 'KALIBRIERE' ? blink : 0].join('|');
     if (sig === dispKey) return; dispKey = sig;
     const g = dg, W = 512, H = 340, c = m.color, mono = 'ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace';
     g.fillStyle = '#020604'; g.fillRect(0, 0, W, H);
     const bgG = g.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, 330); bgG.addColorStop(0, hexA(c, 0.16)); bgG.addColorStop(1, hexA(c, 0.02)); g.fillStyle = bgG; g.fillRect(0, 0, W, H);
-    g.textBaseline = 'alphabetic'; g.shadowColor = c; g.shadowBlur = 14;
+    g.textBaseline = 'alphabetic'; g.shadowColor = c; g.shadowBlur = blur(14);
     g.fillStyle = hexA(c, 0.75); g.font = `600 22px ${mono}`; g.textAlign = 'left'; g.fillText('MODUS ' + (mode + 1) + '/' + MODES.length, 24, 40);
     g.textAlign = 'right'; g.fillText(status, W - 24, 40);
-    g.fillStyle = '#ffffff'; g.shadowBlur = 22; g.textAlign = 'left'; g.font = `800 84px ${mono}`; g.fillText(m.name, 22, 128);
-    g.shadowBlur = 10; g.fillStyle = hexA(c, 0.7); g.font = `600 22px ${mono}`; g.fillText('ZIEL-DIMENSION', 24, 176);
-    g.fillStyle = c; g.shadowBlur = 20; g.font = `800 66px ${mono}`; g.fillText(code, 22, 244);
-    g.shadowBlur = 8; g.fillStyle = hexA(c, 0.85); g.font = `600 21px ${mono}`;
+    g.fillStyle = '#ffffff'; g.shadowBlur = blur(22); g.textAlign = 'left'; g.font = `800 84px ${mono}`; g.fillText(m.name, 22, 128);
+    g.shadowBlur = blur(10); g.fillStyle = hexA(c, 0.7); g.font = `600 22px ${mono}`; g.fillText('ZIEL-DIMENSION', 24, 176);
+    g.fillStyle = c; g.shadowBlur = blur(20); g.font = `800 66px ${mono}`; g.fillText(code, 22, 244);
+    g.shadowBlur = blur(8); g.fillStyle = hexA(c, 0.85); g.font = `600 21px ${mono}`;
     let nm = name; while (nm && g.measureText(nm).width > W - 48) nm = nm.slice(0, -2); if (nm !== name) nm = nm.trimEnd() + '…';
     g.fillText(nm || (status === 'SUCHE ZIEL' ? (blink ? '▮' : ' ') : ''), 24, 280);
-    g.shadowBlur = 8; for (let i = 0; i < 12; i++) { g.fillStyle = i < bars ? c : hexA(c, 0.16); g.fillRect(24 + i * 39, 300, 32, 18); }
-    g.shadowBlur = 0; g.fillStyle = 'rgba(0,0,0,.26)'; for (let y = 0; y < H; y += 4) g.fillRect(0, y, W, 1.5);
+    g.shadowBlur = blur(8); for (let i = 0; i < 12; i++) { g.fillStyle = i < bars ? c : hexA(c, 0.16); g.fillRect(24 + i * 39, 300, 32, 18); }
+    g.shadowBlur = blur(0); g.fillStyle = 'rgba(0,0,0,.26)'; for (let y = 0; y < H; y += 4) g.fillRect(0, y, W, 1.5);
     dTex.needsUpdate = true;
     lamps[0].emissive.set(status === 'BEREIT' ? 0x39ff6a : 0x000000); lamps[1].emissive.set(status === 'LADE' || status === 'SUCHE ZIEL' || status === 'KALIBRIERE' ? 0xffb000 : 0x000000); lamps[2].emissive.set(noteOn ? 0xff3020 : 0x000000);
   }
@@ -433,14 +443,22 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   function frame(now) { requestAnimationFrame(frame); step(now); }
   function step(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
+    const gap = prevNow ? now - prevNow : 16.7; prevNow = now;
+    if (level !== levelOn) { levelOn = level; w = 0; sparkGeo.setDrawRange(0, level === 2 ? NS : NS >> 1); lineGeo.setDrawRange(0, level === 2 ? NL * 2 : (NL >> 1) * 2); }
     const W = window.innerWidth, H = window.innerHeight;
-    if (W !== w || H !== h) { w = W; h = H; renderer.setPixelRatio(engine.mobile ? Math.min(window.devicePixelRatio || 1, 1.25) : Math.min(window.devicePixelRatio || 1, 1.5)); renderer.setSize(W, H, false); cam.aspect = W / H; cam.updateProjectionMatrix(); }
+    if (W !== w || H !== h) { w = W; h = H; renderer.setPixelRatio(pixelRatio()); renderer.setSize(W, H, false); cam.aspect = W / H; cam.updateProjectionMatrix(); }
     const A = engine.cur, live = !!A && !A.def.antechamber && !blocked();
     if (locked && blocked()) { try { document.exitPointerLock(); } catch (e) {} }
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
     if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal schießen · Wischen: umschauen · ZIEL: Welt wählen' : 'Linksklick: Portal schießen · Mausrad oder Q/E: Ziel wählen', 6000); }
     cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready));
     if (lostAt) return;
+    if (raise > 0.9 && gap < 250 && !engine.settings.paused && document.visibilityState === 'visible') {
+      fpsE += (1000 / Math.max(gap, 1) - fpsE) * 0.05;
+      if (fpsE < 40) { lowT += dt; highT = 0; } else if (fpsE > 56) { highT += dt; lowT = 0; } else lowT = highT = 0;
+      if (lowT > 2.5 && level > 0) { level--; lowT = 0; drops++; noRaise = drops > 1 ? Infinity : now + 45000; }
+      else if (highT > 6 && level < 2 && now > noRaise && !(engine.mobile && engine.tier === 'low')) { level++; highT = 0; }
+    }
     if (raise < 0.004 && !shot) { if (!cleared) { renderer.clear(); cleared = true; } return; }
     cleared = false;
 
@@ -503,8 +521,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       // the way in: over the second half of the flight to a shot portal the lens widens and light streaks past; it lingers a moment after the crossing
       const sh = A && A.shot, left = sh ? (A.path.length - A.dist) / Math.max(1, A.path.length) : 1; arrived = Math.max(0, arrived - dt);
       const to = arrived > 0 ? 1 : sh && sh.t > sh.delay ? THREE.MathUtils.clamp((0.7 - left) / 0.45, 0, 1) : 0;
-      warp += (to - warp) * (1 - Math.exp(-dt * (to > warp ? 3 : 5))); engine.fovKick = engine.gentle ? 0 : 0.16 * warp * warp;
-      streaks.visible = warp > 0.02;
+      warp += (to - warp) * (1 - Math.exp(-dt * (to > warp ? 3 : 5))); engine.fovKick = engine.gentle || engine.mobile ? 0 : 0.16 * warp * warp;   // (a wider lens is more to draw: not on a phone)
+      streaks.visible = warp > 0.02 && level > 0;
       if (streaks.visible) {
         const sp = 26 + 90 * warp, len = 0.4 + 7 * warp;
         for (let i = 0; i < NL; i++) { const q = lineSeed[i]; q[2] += dt * sp * q[3]; if (q[2] > 2) q[2] -= 46; const o = i * 6; linePos[o] = linePos[o + 3] = q[0]; linePos[o + 1] = linePos[o + 4] = q[1]; linePos[o + 2] = q[2]; linePos[o + 5] = q[2] - len * q[3]; }
@@ -518,16 +536,15 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
           _v.set(_v.x, _v.y, 0.5).unproject(cam).sub(cam.position).normalize().multiplyScalar(depth);
           const R = rift.radius; ringT += dt; const rb = ringT / 0.6;
           if (rb < 1) { ring.position.copy(_v); ring.scale.setScalar((0.6 + 5.5 * Math.sqrt(rb)) * R * 2); ring.material.opacity = (1 - rb) * (1 - rb); }
-          sparks.visible = true; sparks.material.size = R * 0.34; sparks.material.opacity = 0.85 * Math.min(1, ringT * 3);
+          sparks.visible = level > 0; sparks.material.size = R * 0.34; sparks.material.opacity = 0.85 * Math.min(1, ringT * 3);
           for (let i = 0; i < NS; i++) { const q = sparkSeed[i], f = (t * 0.55 * q[2] + q[1]) % 1, rr = R * (2.6 - 2.3 * f), a = q[0] + 5.5 * f * f; sparkPos[i * 3] = _v.x + Math.cos(a) * rr; sparkPos[i * 3 + 1] = _v.y + Math.sin(a) * rr; sparkPos[i * 3 + 2] = _v.z + R * 0.3 * (1 - f); }
           sparkGeo.attributes.position.needsUpdate = true;
         }
       }
     }
-    drawDisplay(now);
-    renderer.render(scene, cam);
+    if (level > 0 || shot || (frameNo++ & 1) === 0) { drawDisplay(now); renderer.render(scene, cam); }   // (level 0: every other frame, but every frame while a bolt flies)
   }
   requestAnimationFrame(frame);
 
-  return { setMode, fire, step, get mode() { return MODES[mode].id; }, modes: MODES };
+  return { setMode, fire, step, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
 }

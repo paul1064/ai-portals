@@ -157,7 +157,7 @@ export class Engine {
   _limits() {
     const t = TIERS[this.tier];
     this.maxPR = this.fixedPR || ratioFor(this.tier, this.w, this.h);
-    this.minPR = this.fixedPR || Math.max(0.35, this.maxPR * t.floor);
+    this.minPR = this.fixedPR || Math.max(0.35, this.maxPR * (this.mobile && this.tier === 'low' ? Math.min(t.floor, 0.42) : t.floor));   // an old phone may go coarser than a slow desktop: smooth before sharp
     this.adaptive = !this.fixedPR && !this.opts.freeze && t.adapt;
   }
   _resize(force) {
@@ -1069,7 +1069,7 @@ export class Engine {
     rc.set(origin, dir); rc.near = near; rc.far = far; rc.camera = this.camera;
     let best = null, bestHit = null;
     const walk = (o) => {
-      if (!o.visible || skip.includes(o) || performance.now() - t0 > 24) return;
+      if (!o.visible || skip.includes(o) || performance.now() - t0 > (this.mobile ? 9 : 24)) return;
       if (o.isMesh && !o.isSkinnedMesh && o.geometry) {
         const m = Array.isArray(o.material) ? o.material[0] : o.material, g = o.geometry;
         const tris = (g.index ? g.index.count : g.attributes?.position?.count || 0) / 3;
