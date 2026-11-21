@@ -66,7 +66,7 @@ This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself 
 | V | Record ten seconds of the flight as a video, without sound (also in the share menu) |
 | Golden cores | They hang beside the route of every world. Look at one for a moment and it is marked (its ring turns white): the flight then closes on it by itself. Caught, it loads a push (three at the most; you start with one) and is one more to spend. The count at the upper right is what you have |
 | The log | Every dimension you reach for the first time is counted (the stamp on arrival says how many of all) and brings a core |
-| Z | Slow motion: for five seconds the world and the flight run at a quarter of their pace. It costs a core |
+| Z, or ZEITLUPE on a phone | Slow motion: for five seconds the world and the flight run at a quarter of their pace. It costs a core |
 | B, or a tap on the count | The workshop, where cores are spent: the dial's FREMD (4) and BIZARR (8), which until then behave as Zufall; three steps of a stronger charged shot (3, 6, 10); room for five pushes (6). It also starts the race: sixty seconds, ten points a world and five a core |
 | Enter, M, N | Pause, sound, hurry to the next portal (with the gun on, space, S and the right arrow fly instead; G alone is the gentle camera) |
 | Touch screen | Tap to shoot where you tap, drag to look round; buttons at the lower left turn the dial, brake, (NEIGEN) let you look round by turning the phone itself, and fire the push |

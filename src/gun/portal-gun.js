@@ -61,6 +61,10 @@ body.gun-touch #gun-pad { display: flex; }
 #gun-pad #gun-b-push.down { background: #fff; }
 #gun-pad #gun-b-push.empty { opacity: .45; box-shadow: none; }
 #gun-pad #gun-b-push small { color: #ffd24a; opacity: 1; letter-spacing: .3em; font-size: 11px; }
+#gun-pad #gun-b-slow small { color: #ffd24a; opacity: 1; }
+#gun-pad #gun-b-slow.empty { opacity: .45; box-shadow: none; }
+#gun-pad #gun-b-slow.down { background: var(--gun, #6dff3b); }
+@media (max-height: 700px) and (min-height: 481px) { #gun-pad { gap: 8px; } #gun-pad button { height: 48px; } }
 #gun-x.over { color: #fff; }
 #gun-cores { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(14px + env(safe-area-inset-top, 0px)); pointer-events: none; z-index: 3; font: 600 15px/1 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; letter-spacing: .18em; color: #ffd24a; text-shadow: 0 0 10px #ffa800, 0 0 2px #000; opacity: 0; transition: opacity .5s ease, transform .25s ease; white-space: nowrap; }
 #gun-cores.on { opacity: .95; pointer-events: auto; cursor: pointer; }
@@ -95,7 +99,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const stamp = document.createElement('div'); stamp.id = 'gun-stamp';
   const flash = document.createElement('div'); flash.id = 'gun-flash';
   const pad = document.createElement('div'); pad.id = 'gun-pad';
-  pad.innerHTML = '<button id="gun-b-mode" aria-label="Ziel wählen"><small>ZIEL</small><span></span></button><button id="gun-b-brake" aria-label="Bremsen (halten)"><small>HALTEN</small>BREMSE</button><button id="gun-b-tilt" aria-label="Umschauen durch Drehen des Handys" aria-pressed="false"><small>HANDY</small>NEIGEN</button><button id="gun-b-push" aria-label="Push: ein weißes Loch schleudert dich weg"><small>WEISSES LOCH</small>PUSH</button>';
+  pad.innerHTML = '<button id="gun-b-mode" aria-label="Ziel wählen"><small>ZIEL</small><span></span></button><button id="gun-b-brake" aria-label="Bremsen (halten)"><small>HALTEN</small>BREMSE</button><button id="gun-b-tilt" aria-label="Umschauen durch Drehen des Handys" aria-pressed="false"><small>HANDY</small>NEIGEN</button><button id="gun-b-push" aria-label="Push: ein weißes Loch schleudert dich weg"><small>WEISSES LOCH</small>PUSH</button><button id="gun-b-slow" aria-label="Zeitlupe: f\u00FCnf Sekunden, kostet einen Kern"><small>1 \u25C6</small>ZEITLUPE</button>';
   const chip = document.createElement('div'); chip.id = 'gun-cores';
   document.body.append(flash, cross, stamp, pad, chip); document.body.classList.add('gun');
 
@@ -402,7 +406,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const powerOf = (at) => THREE.MathUtils.clamp((performance.now() - at - 250) / 1000, 0, maxPower());   // a quarter second is still a plain shot; a second more is all there is (less, until the charge is built up)
   const setCells = (n) => {
     cells = Math.max(0, Math.min(maxCells(), n)); const marks = '\u25C6'.repeat(cells) + '\u25C7'.repeat(maxCells() - cells);
-    chip.innerHTML = marks + '<small>' + bank + '</small>'; const b = pad.querySelector('#gun-b-push'); b.querySelector('small').textContent = marks; b.classList.toggle('empty', cells < 1);
+    chip.innerHTML = marks + '<small>' + bank + '</small>'; const b = pad.querySelector('#gun-b-push'); b.querySelector('small').textContent = marks; b.classList.toggle('empty', cells < 1); pad.querySelector('#gun-b-slow').classList.toggle('empty', cells < 1);
   };
   setCells(cells);
 
@@ -544,6 +548,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   // points (the arithmetic every such control uses); what counts is how far that has turned, left-right and up-down, from
   // where it pointed when the button was pressed or a portal was last shot. Dragging still works on top of it.
   const bPush = pad.querySelector('#gun-b-push');
+  const bSlow = pad.querySelector('#gun-b-slow');   // (the phone's Z: slow motion for a core; lit while it lasts)
+  bSlow.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); slowMo(); });
   bPush.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); bPush.classList.add('down'); setTimeout(() => bPush.classList.remove('down'), 160); fire(window.innerWidth / 2, window.innerHeight * 0.42, true); });
   const bTilt = pad.querySelector('#gun-b-tilt'), tilt = { on: false, ref: null, now: null, got: 0, heard: null };
   const _te = new THREE.Euler(), _tq = new THREE.Quaternion(), _tq1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)), _tz = new THREE.Vector3(0, 0, 1), _tq0 = new THREE.Quaternion(), _tf = new THREE.Vector3();
@@ -707,6 +713,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   function step(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
     const gap = prevNow ? now - prevNow : 16.7; prevNow = now;
+    bSlow.classList.toggle('down', now < slowUntil);
     { const want = now < slowUntil ? 0.25 : 1, ts = engine.timeScale ?? 1; engine.timeScale = Math.abs(want - ts) < 0.01 ? want : ts + (want - ts) * Math.min(1, dt * 6); }   // (slow motion eases in and out)
     if (level !== levelOn) { levelOn = level; w = 0; sparkGeo.setDrawRange(0, level === 2 ? NS : NS >> 1); lineGeo.setDrawRange(0, level === 2 ? NL * 2 : (NL >> 1) * 2); }
     const W = window.innerWidth, H = window.innerHeight;
