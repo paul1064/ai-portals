@@ -62,7 +62,8 @@ This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself 
 | Looking | You fly where you look: the flight drifts toward it, inside a tube round the world's own route |
 | W A S D, arrow keys | W pushes on, S (or Shift) brakes to a hover, A and D slip sideways |
 | Space / C | Rise / sink |
-| Golden cores | They hang beside the route of every world. Fly into one and it loads a push (three at the most; you start with one). The count at the upper right is every core you ever caught |
+| Golden cores | They hang beside the route of every world. Fly into one and it loads a push (three at the most; you start with one) and is one more to spend. The count at the upper right is what you have |
+| B, or a tap on the count | The workshop, where cores are spent: the dial's FREMD (4) and BIZARR (8), which until then behave as Zufall; three steps of a stronger charged shot (3, 6, 10); room for five pushes (6) |
 | Enter, M, N | Pause, sound, hurry to the next portal (with the gun on, space, S and the right arrow fly instead; G alone is the gentle camera) |
 | Touch screen | Tap to shoot where you tap, drag to look round; buttons at the lower left turn the dial, brake, (NEIGEN) let you look round by turning the phone itself, and fire the push |
 

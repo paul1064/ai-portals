@@ -8,6 +8,7 @@
 //   W A S D, arrows  fly: W pushes on, S (or Shift) brakes to a hover, A and D slip sideways; space rises, C sinks
 //   looking         the flight goes where the middle of the picture points, inside a tube round the world's route (engine._steer)
 //   cores           golden energy cores hang beside the route of every world: flown into, each loads one push (three at the most)
+//   B / the count   the workshop: cores are spent there, on the dial's FREMD and BIZARR, a stronger charged shot, room for five pushes
 // On a touch screen: tap to shoot where you tap, drag to look round, and buttons at the lower left: the dial, a brake to hold,
 // and NEIGEN, which lets the phone itself be turned to look round (its orientation sensor).
 // On a phone the gun is drawn straight into the picture by the engine's own renderer, after the frame is finished (INLINE below):
@@ -59,7 +60,20 @@ body.gun-touch #gun-pad { display: flex; }
 #gun-pad #gun-b-push small { color: #ffd24a; opacity: 1; letter-spacing: .3em; font-size: 11px; }
 #gun-x.over { color: #fff; }
 #gun-cores { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(14px + env(safe-area-inset-top, 0px)); pointer-events: none; z-index: 3; font: 600 15px/1 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; letter-spacing: .18em; color: #ffd24a; text-shadow: 0 0 10px #ffa800, 0 0 2px #000; opacity: 0; transition: opacity .5s ease, transform .25s ease; white-space: nowrap; }
-#gun-cores.on { opacity: .95; }
+#gun-cores.on { opacity: .95; pointer-events: auto; cursor: pointer; }
+#gun-shop { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(430px, calc(100vw - 28px)); max-height: calc(100vh - 40px); overflow: auto; box-sizing: border-box; padding: 18px 18px 14px; z-index: 7; border-radius: 16px; border: 1.5px solid #ffd24a; background: rgba(8, 9, 6, .97); box-shadow: 0 0 40px -8px #ffa800; color: #fff; font: 600 13px/1.35 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; letter-spacing: .06em; }
+#gun-shop[hidden] { display: none; }
+#gun-shop h2 { margin: 0 0 4px; font-size: 17px; letter-spacing: .3em; color: #ffd24a; text-shadow: 0 0 10px #ffa800; }
+#gun-shop p { margin: 0 0 12px; opacity: .75; font-weight: 500; }
+#gun-shop .row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid rgba(255, 210, 74, .22); }
+#gun-shop .row div { flex: 1; min-width: 0; }
+#gun-shop .row b { display: block; letter-spacing: .14em; }
+#gun-shop .row span { display: block; opacity: .7; font-weight: 500; font-size: 12px; }
+#gun-shop button { all: unset; box-sizing: border-box; min-width: 104px; height: 44px; padding: 0 12px; border-radius: 22px; border: 1.5px solid #ffd24a; color: #ffd24a; text-align: center; font-weight: 700; letter-spacing: .12em; cursor: pointer; }
+#gun-shop button:hover:not(:disabled) { background: #ffd24a; color: #171200; }
+#gun-shop button:disabled { opacity: .38; cursor: default; }
+#gun-shop button.done { border-color: transparent; color: #7dff8f; opacity: .9; }
+#gun-shop .close { display: block; margin: 12px auto 0; border-color: rgba(255, 255, 255, .5); color: #fff; }
 #gun-cores.got { transform: scale(1.35); }
 #gun-cores small { font-size: 11px; opacity: .75; margin-left: .7em; }
 body.notitles #gun-cores { display: none; }
@@ -355,7 +369,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
 
   const pickFor = (m) => {
     const cur = engine.cur && engine.cur.def.id;
-    if (m.id === 'any') return null;
+    if (m.id === 'any' || lockedMode(m)) return null;   // (a position not yet bought behaves as ZUFALL)
     if (m.id === 'back') { const id = trailIds[trailIds.length - 2]; return (id && worldsById.get(id)) || null; }
     let pool;
     if (m.id === 'fav') pool = engine.registry.filter((d) => hearts && hearts.has(d.id) && d.id !== cur);
@@ -371,10 +385,17 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   // charging (a shot held back), and the cores: how many pushes are loaded (one to begin with), how many cores were ever caught
   let mHold = 0, over = 0, hum = null, restT = 0, cells = 1, total = 0, coreWorld = null, coreTipAt = 0, cellTip = false, chipT = 0;
   try { total = Math.max(0, parseInt(localStorage.getItem('portals.gun.cores'), 10) || 0); } catch (e) {}
-  const powerOf = (at) => THREE.MathUtils.clamp((performance.now() - at - 250) / 1000, 0, 1);   // a quarter second is still a plain shot; a second more is full
+  // What the cores buy (the workshop, further down): the dial's FREMD and BIZARR, three steps of a stronger charged shot, room
+  // for five pushes. bank is what is left to spend; total, every core ever caught.
+  let bank = total, shopOpen = false, shopTip = false; const up = { alien: false, bizarre: false, charge: 0, cells: false };
+  try { const b = localStorage.getItem('portals.gun.bank'); if (b != null) bank = Math.max(0, parseInt(b, 10) || 0); Object.assign(up, JSON.parse(localStorage.getItem('portals.gun.up') || '{}')); up.charge = Math.max(0, Math.min(3, up.charge | 0)); } catch (e) {}
+  const saveUp = () => { try { localStorage.setItem('portals.gun.bank', String(bank)); localStorage.setItem('portals.gun.up', JSON.stringify(up)); localStorage.setItem('portals.gun.cores', String(total)); } catch (e) {} };
+  const lockedMode = (m) => (m.id === 'alien' && !up.alien) || (m.id === 'bizarre' && !up.bizarre);
+  const maxPower = () => 0.4 + 0.2 * up.charge, maxCells = () => (up.cells ? 5 : 3);
+  const powerOf = (at) => THREE.MathUtils.clamp((performance.now() - at - 250) / 1000, 0, maxPower());   // a quarter second is still a plain shot; a second more is all there is (less, until the charge is built up)
   const setCells = (n) => {
-    cells = Math.max(0, Math.min(3, n)); const marks = '\u25C6'.repeat(cells) + '\u25C7'.repeat(3 - cells);
-    chip.innerHTML = marks + '<small>' + total + '</small>'; const b = pad.querySelector('#gun-b-push'); b.querySelector('small').textContent = marks; b.classList.toggle('empty', cells < 1);
+    cells = Math.max(0, Math.min(maxCells(), n)); const marks = '\u25C6'.repeat(cells) + '\u25C7'.repeat(maxCells() - cells);
+    chip.innerHTML = marks + '<small>' + bank + '</small>'; const b = pad.querySelector('#gun-b-push'); b.querySelector('small').textContent = marks; b.classList.toggle('empty', cells < 1);
   };
   setCells(cells);
 
@@ -388,6 +409,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     click(); slosh += 0.4;
     if (m.id === 'fav' && !(hearts && hearts.size)) { say('KEINE FAVORITEN', 2600); toast('Noch keine Favoriten: mit H merkst du dir eine Welt'); return; }
     if (m.id === 'back' && trailIds.length < 2) { say('KEIN VERLAUF', 2600); toast('Zurück geht erst nach dem ersten Sprung'); return; }
+    if (lockedMode(m)) { say('GESPERRT', 2600); toast(m.name + ' ist noch gesperrt: in der Werkstatt freischalten (' + (document.body.classList.contains('gun-touch') ? 'oben rechts auf die Kerne tippen' : 'Taste B') + ')', 4200); if (engine.cur && !engine.cur.def.antechamber) engine.requeue(); return; }
     if (engine.cur && !engine.cur.def.antechamber && !engine.requeue()) say('ZU SPÄT', 1400);
     toast('Ziel: ' + m.name + ' · ' + m.hint, 1800);
   };
@@ -425,7 +447,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   function drawDisplay(now) {
     const m = MODES[mode], A = engine.cur, n = engine.next, ante = !A || A.def.antechamber, ready = !!(n && n.ready);
     const noteOn = now < noteUntil, blink = Math.floor(now / 320) % 2;
-    const status = noteOn ? note : ante ? 'KALIBRIERE' : over >= 1 ? '\u00DCBERLADEN' : over > 0 ? 'LADE AUF' : charge < 1 ? 'LADE' : !ready ? 'SUCHE ZIEL' : 'BEREIT';
+    const status = noteOn ? note : ante ? 'KALIBRIERE' : lockedMode(m) ? 'GESPERRT' : over >= maxPower() ? (up.charge >= 3 ? '\u00DCBERLADEN' : 'VOLL') : over > 0 ? 'LADE AUF' : charge < 1 ? 'LADE' : !ready ? 'SUCHE ZIEL' : 'BEREIT';
     const code = n && n.def && !ante ? dimCode(n.def.id) : '··-···', name = ready && n.def ? String(n.def.name || '').toUpperCase() : '';
     const bars = engine.mobile ? Math.round(charge * 4) * 3 : Math.round(charge * 12), sig = [mode, status, code, name, bars, status === 'SUCHE ZIEL' || status === 'KALIBRIERE' ? blink : 0].join('|');
     if (sig === dispKey) return; dispKey = sig;
@@ -448,7 +470,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   }
 
   // ---------- firing ----------
-  const blocked = () => { const ab = $('about'); return document.body.classList.contains('atlas-open') || (!!ab && !ab.hidden) || !$('veil').classList.contains('gone'); };   // (the About stays in the page once opened, hidden: only an open one counts)
+  const blocked = () => { const ab = $('about'); return shopOpen || document.body.classList.contains('atlas-open') || (!!ab && !ab.hidden) || !$('veil').classList.contains('gone'); };   // (the About stays in the page once opened, hidden: only an open one counts)
   const _v = new THREE.Vector3(), _w = new THREE.Vector3();
   function fire(cx, cy, push, power = 0) {
     if (blocked() || raise < 0.6) return;
@@ -464,7 +486,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     // (a push: the bolt goes to where the white hole is struck, a short way off; the portal, at the far end of the throw, opens by itself)
     shot = { t: 0, delay: res.push ? 0.09 : res.delay, point: res.push ? res.origin : res.point, exit: res.point, radius: res.radius, push: res.push, landed: false, from: body.localToWorld(_v.copy(MUZZLE)).clone(), hist: [] };
     cross.classList.add('kick'); requestAnimationFrame(() => requestAnimationFrame(() => cross.classList.remove('kick')));
-    if (res.push) { boom(); say('PUSH', 900); recoilV += 5; } else { bang(res.delay, power); if (power > 0.5) say(power >= 1 ? 'VOLLE LADUNG' : 'AUFGELADEN', 900); }
+    if (res.push) { boom(); say('PUSH', 900); recoilV += 5; } else { bang(res.delay, power); if (power > 0.3) say(power >= maxPower() ? 'VOLLE LADUNG' : 'AUFGELADEN', 900); }
   }
   const canLock = !!view.requestPointerLock;
   // A finger: a short tap shoots where it lands, a drag turns the view with it (the picture follows the finger). The first
@@ -578,6 +600,34 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   }, { passive: true });
   document.addEventListener('pointerleave', () => { hover = false; });
 
+  // ---------- the workshop: where cores are spent ----------
+  const ITEMS = [
+    { name: () => 'FREMD', text: 'Das Ziel FREMD am Drehknopf: fremde Welten gezielt anw\u00E4hlen', cost: () => 4, done: () => up.alien, buy: () => { up.alien = true; } },
+    { name: () => 'BIZARR', text: 'Das Ziel BIZARR am Drehknopf: das ganz Seltsame gezielt anw\u00E4hlen', cost: () => 8, done: () => up.bizarre, buy: () => { up.bizarre = true; } },
+    { name: () => 'LADUNG ' + Math.min(3, up.charge + 1) + '/3', text: 'Der aufgeladene Schuss wird st\u00E4rker: gr\u00F6\u00DFeres Portal, weiter weg, schneller', cost: () => [3, 6, 10][Math.min(2, up.charge)], done: () => up.charge >= 3, buy: () => { up.charge++; } },
+    { name: () => 'PUSH-SPEICHER', text: 'F\u00FCnf statt drei Pushes laden', cost: () => 6, done: () => up.cells, buy: () => { up.cells = true; } },
+  ];
+  const shop = document.createElement('div'); shop.id = 'gun-shop'; shop.hidden = true; shop.setAttribute('role', 'dialog'); shop.setAttribute('aria-label', 'Werkstatt'); document.body.appendChild(shop);
+  const drawShop = () => {
+    shop.innerHTML = '<h2>WERKSTATT</h2><p>\u25C6 ' + bank + (bank === 1 ? ' Kern' : ' Kerne') + ' zum Ausgeben. Kerne h\u00E4ngen golden neben der Route.</p>' + ITEMS.map((it, i) => '<div class="row"><div><b>' + it.name() + '</b><span>' + it.text + '</span></div>' +
+      (it.done() ? '<button class="done" disabled>\u2713 GEBAUT</button>' : '<button data-i="' + i + '"' + (bank < it.cost() ? ' disabled' : '') + '>\u25C6 ' + it.cost() + '</button>') + '</div>').join('') + '<button class="close" data-i="x">SCHLIESSEN</button>';
+  };
+  const openShop = (on) => {
+    shopOpen = on; shop.hidden = !on; engine.throttle = on ? 0.06 : keys.brake ? 0.06 : keys.push ? 2.4 : 1;   // (the flight all but stands while the workshop is open)
+    if (on) { mHold = 0; drawShop(); try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {} }
+  };
+  shop.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return; if (b.dataset.i === 'x') return openShop(false);
+    const it = ITEMS[Number(b.dataset.i)]; if (!it || it.done() || bank < it.cost()) return;
+    bank -= it.cost(); it.buy(); saveUp(); setCells(cells); dispKey = ''; chime(); drawShop();
+    if (engine.cur && !engine.cur.def.antechamber) engine.requeue();   // a position of the dial just bought counts from this portal on
+  });
+  chip.addEventListener('click', () => openShop(!shopOpen));
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return; const tag = e.target && e.target.tagName; if (tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'INPUT') return;
+    if (e.key === 'b' || e.key === 'B') { if (shopOpen || !blocked()) openShop(!shopOpen); } else if (e.key === 'Escape' && shopOpen) openShop(false);
+  });
+
   // ---------- the energy cores ----------
   // Up to five hang beside the route of each world, to the side of it and above, inside the tube the steering allows, so each
   // can be reached and none is met by flying straight on. They are drawn by the gun (its own sprites, laid where the place
@@ -596,8 +646,9 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     }
   };
   const caught = (c) => {
-    c.on = false; c.gone = 0.4; total++; try { localStorage.setItem('portals.gun.cores', String(total)); } catch (e) {}
-    const full = cells >= 3; setCells(cells + 1); chime(); say(full ? 'KERN +1' : 'PUSH GELADEN', 1000); charge = 1; heat = Math.max(heat, 0.55); sloshV += 5;
+    c.on = false; c.gone = 0.4; total++; bank++; saveUp();
+    if (!shopTip && bank >= 3) { shopTip = true; setTimeout(() => toast(document.body.classList.contains('gun-touch') ? 'Kerne ausgeben: oben rechts auf die Kerne tippen' : 'Kerne ausgeben: Taste B \u00F6ffnet die Werkstatt', 5200), 1400); }
+    const full = cells >= maxCells(); setCells(cells + 1); chime(); say(full ? 'KERN +1' : 'PUSH GELADEN', 1000); charge = 1; heat = Math.max(heat, 0.55); sloshV += 5;
     chip.classList.add('got'); clearTimeout(chipT); chipT = setTimeout(() => chip.classList.remove('got'), 260);
     try { if (navigator.vibrate) navigator.vibrate(18); } catch (e) {}
   };
@@ -795,5 +846,5 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     engine.overlay = () => step(performance.now());
   } else requestAnimationFrame(frame);
 
-  return { setMode, fire, step, cores, get cells() { return cells; }, set cells(v) { setCells(v); }, get total() { return total; }, get over() { return over; }, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
+  return { setMode, fire, step, cores, get cells() { return cells; }, set cells(v) { setCells(v); }, get total() { return total; }, get bank() { return bank; }, set bank(v) { bank = Math.max(0, v | 0); saveUp(); setCells(cells); }, up, openShop, get over() { return over; }, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
 }
