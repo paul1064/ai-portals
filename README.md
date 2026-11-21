@@ -4,6 +4,8 @@
 
 **Play this copy in the browser: [paul1064.github.io/ai-portals](https://paul1064.github.io/ai-portals/)** (a desktop browser with a mouse; click once to take the mouse, press S for sound).
 
+[![A hand-held portal gun in the foreground; a green swirling portal hangs beside the Eiffel Tower at dusk](readme/portal-gun.jpg)](https://paul1064.github.io/ai-portals/)
+
 The rest of this page is the original's README, apart from the two sections about the gun.
 
 An endless, hands-off flight through 471 generated 3D worlds in a browser. Each world ends in a portal that opens on the next one, and nothing is steered: it flies itself. Live at [portals-endless-worlds.netlify.app](https://portals-endless-worlds.netlify.app) (press S for sound).
