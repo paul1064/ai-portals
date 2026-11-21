@@ -450,7 +450,7 @@ async function boot() {
     if (tag === 'BUTTON' && t.closest('#panel, #share') && (e.code === 'Space' || e.key === 'Enter')) return;   // space presses the focused button of the options, it does not pause as well
     if (e.key === 'i' || e.key === 'I') atlas.open();
     else if (e.key === 'h' || e.key === 'H') heart();
-    // (with the gun on, W, S, D, Shift and the arrows fly; space was the gun's once and is left alone: pause is Enter, sound M, hurry N, and only G is the gentle camera)
+    // (with the gun on, W, S, Shift and the arrows fly; space was the gun's once and is left alone: pause is Enter, sound M, hurry N, and only G is the gentle camera)
     else if (fly ? e.key === 'Enter' : e.code === 'Space') { e.preventDefault(); setPaused(!engine.settings.paused); }
     else if (e.key === 'f' || e.key === 'F') full();
     else if (fly ? e.key === 'm' || e.key === 'M' : e.key === 's' || e.key === 'S') sound();

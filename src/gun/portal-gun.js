@@ -5,7 +5,7 @@
 //   wheel, Q / E   turn the dial: which kind of world waits behind the next portal
 //   1 .. 6         the dial's positions by number
 //   first click    takes the mouse (Esc gives it back): from then on the mouse looks round, as in a first-person game
-//   W, S (or D)     W pushes on, S brakes to a hover (D does the same); Shift is the hyperboost. Where the flight goes is
+//   W, S, Shift     W pushes on, S brakes to a hover, Shift is the hyperboost. Where the flight goes is
 //                   the sight's business alone: it stands in the middle of the picture, and the flight follows it
 //   arrow keys      turn the view, as the mouse does (for a touchpad, which is dead while keys are held)
 //   looking         the flight goes where the middle of the picture points, inside a tube round the world's route (engine._steer)
@@ -602,7 +602,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     // X held and let go is the charged shot too (a touchpad's tap cannot be held)
     if (c === 'KeyZ') { if (on && !e.repeat) slowMo(); return; }   // slow motion: five seconds for one core
     if (c === 'KeyX') { if (on) { if (!e.repeat && !mHold) mHold = performance.now(); } else if (mHold) { const pw = powerOf(mHold); mHold = 0; fire(window.innerWidth / 2, window.innerHeight / 2, false, pw); } return; }
-    if (c === 'KeyS' || c === 'KeyD') keys.brake = on; else if (c === 'KeyW') keys.push = on;
+    if (c === 'KeyS') keys.brake = on; else if (c === 'KeyW') keys.push = on;
     else if (c === 'ShiftLeft' || c === 'ShiftRight') keys.hyper = on;
     else if (c.startsWith('Arrow')) { keys[c] = on; if (on) keyLook = true; }   // the arrows turn the view
     else return;
