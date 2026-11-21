@@ -401,6 +401,10 @@ async function boot() {
     }, 'image/png');
   };
   $('b-photo').onclick = photo;
+  // a ten-second film of the flight (src/gun/clip.js, loaded when first asked for): key V, or the share menu
+  let clipApi = null;
+  const clip = () => import('./gun/clip.js').then((m) => (clipApi || (clipApi = m.setupClip({ engine, toast, gun: () => window.__gun }))).toggle()).catch((e) => { console.warn('clip', e); toast('Die Aufnahme l\u00E4sst sich nicht laden'); });
+  if ($('sh-clip')) $('sh-clip').onclick = () => { shareMenu(false); clip(); };
   // ---------- sharing ----------
   // one button on the bar opens a small menu: a link to the world on screen, a link that replays this journey, a picture
   const bShare = $('b-share'), share = $('share');
@@ -451,6 +455,7 @@ async function boot() {
     else if (e.key === 'f' || e.key === 'F') full();
     else if (fly ? e.key === 'm' || e.key === 'M' : e.key === 's' || e.key === 'S') sound();
     else if (e.key === 'p' || e.key === 'P') photo();
+    else if (e.key === 'v' || e.key === 'V') clip();
     else if (e.key === 'o' || e.key === 'O') more();
     else if ((!fly && (e.key === 'c' || e.key === 'C')) || e.key === 'g' || e.key === 'G') setCamera(engine.settings.camera === 'steady' ? 'sweeping' : 'steady', true);
     else if (e.key === 'r' || e.key === 'R') report();
