@@ -8,6 +8,8 @@
 //   W A S D, arrows  fly: W pushes on, S (or Shift) brakes to a hover, A and D slip sideways; space rises, C sinks
 //   looking         the flight goes where the middle of the picture points, inside a tube round the world's route (engine._steer)
 //   cores           golden energy cores hang beside the route of every world: flown into, each loads one push (three at the most)
+//   the log         every dimension reached for the first time is counted (the stamp says how many of all) and brings a core
+//   the race        from the workshop: sixty seconds, worlds reached and cores caught make the score
 //   B / the count   the workshop: cores are spent there, on the dial's FREMD and BIZARR, a stronger charged shot, room for five pushes
 // On a touch screen: tap to shoot where you tap, drag to look round, and buttons at the lower left: the dial, a brake to hold,
 // and NEIGEN, which lets the phone itself be turned to look round (its orientation sensor).
@@ -75,6 +77,8 @@ body.gun-touch #gun-pad { display: flex; }
 #gun-shop button.done { border-color: transparent; color: #7dff8f; opacity: .9; }
 #gun-shop .close { display: block; margin: 12px auto 0; border-color: rgba(255, 255, 255, .5); color: #fff; }
 #gun-cores.got { transform: scale(1.35); }
+#gun-race { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(40px + env(safe-area-inset-top, 0px)); pointer-events: none; z-index: 3; font: 700 15px/1 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; letter-spacing: .14em; color: #fff; text-shadow: 0 0 10px #ff4fd8, 0 0 2px #000; white-space: nowrap; }
+#gun-race:empty { display: none; }
 #gun-cores small { font-size: 11px; opacity: .75; margin-left: .7em; }
 body.notitles #gun-cores { display: none; }
 @media (max-height: 480px) { #gun-pad { bottom: calc(74px + env(safe-area-inset-bottom, 0px)); flex-direction: row; } }
@@ -171,6 +175,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   add(prof([[-0.046, -0.152], [-0.102, -0.143], [-0.104, -0.152], [-0.048, -0.162]], 0.04, 0.002), dark);
   { const g = new THREE.TorusGeometry(0.03, 0.0032, 10, 28, Math.PI); g.rotateZ(Math.PI); g.rotateY(Math.PI / 2); add(g, dark, 0, -0.027, -0.014); }
   add(prof([[0.006, -0.026], [0.016, -0.026], [0.02, -0.04], [0.016, -0.052], [0.008, -0.05], [0.012, -0.04]], 0.009, 0.0015), orange, 0, 0, 0.012);
+  let foreFinger = null;   // (the forefinger's own group: it draws back as a shot is held and let go)
   // THE HAND: a right hand in a work glove, closed round the grip. It is seen from behind and to the left, so what shows
   // is the thumb lying along the left flank, the three fingers coming round the front of the grip with their tips on the
   // left, the forefinger through the guard on the trigger, the web of the hand under the receiver's tail, and the wrist
@@ -182,11 +187,11 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const sleeve = M({ color: 0x15171a, metalness: 0, roughness: 0.9 });
     const hand = new THREE.Group(); body.add(hand);
     const V = (x, y, z) => new THREE.Vector3(x, y, z);
-    const ball = (c, r, mat, sx = 1, sy = 1, sz = 1) => { const m = add(new THREE.SphereGeometry(r, 18, 12), mat, c.x, c.y, c.z, hand); m.scale.set(sx, sy, sz); return m; };
+    const ball = (c, r, mat, sx = 1, sy = 1, sz = 1, to = hand) => { const m = add(new THREE.SphereGeometry(r, 18, 12), mat, c.x, c.y, c.z, to); m.scale.set(sx, sy, sz); return m; };
     // a finger: a tube through the points, closed with a ball at each end, a paler pad at the tip
-    const finger = (pts, r, tip = true) => {
-      add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'centripetal'), 28, r, 12), glove, 0, 0, 0, hand);
-      ball(pts[0], r, glove); ball(pts[pts.length - 1], r * 1.02, tip ? pad : glove);
+    const finger = (pts, r, tip = true, to = hand) => {
+      add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'centripetal'), 28, r, 12), glove, 0, 0, 0, to);
+      ball(pts[0], r, glove, 1, 1, 1, to); ball(pts[pts.length - 1], r * 1.02, tip ? pad : glove, 1, 1, 1, to);
     };
     // the grip's own axis (it leans back) and the direction square to it that points to its front
     const top = V(0, -0.026, 0.048), ax = V(0, -0.976, 0.216), fw = V(0, -0.216, -0.976);
@@ -197,7 +202,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     };
     round(0.046, 0.0102, -0.5, 3.75); round(0.0665, 0.0100, -0.5, 3.85); round(0.0865, 0.0092, -0.5, 3.9, 0.0265, 0.0365);
     // the forefinger: along the right flank, through the guard, its tip on the trigger showing at the left
-    finger([V(0.027, -0.04, 0.05), V(0.0285, -0.037, 0.012), V(0.022, -0.039, -0.02), V(0.008, -0.041, -0.031), V(-0.008, -0.042, -0.027)], 0.0088);
+    foreFinger = new THREE.Group(); hand.add(foreFinger);
+    finger([V(0.027, -0.04, 0.05), V(0.0285, -0.037, 0.012), V(0.022, -0.039, -0.02), V(0.008, -0.041, -0.031), V(-0.008, -0.042, -0.027)], 0.0088, true, foreFinger);
     // the thumb: from the web forward along the left flank, under the dial
     finger([V(-0.006, -0.034, 0.1), V(-0.024, -0.037, 0.078), V(-0.0295, -0.036, 0.048), V(-0.0295, -0.033, 0.02)], 0.0108);
     ball(V(-0.016, -0.04, 0.092), 0.017, glove, 1, 0.95, 1.2);                       // the ball of the thumb
@@ -486,6 +492,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     // (a push: the bolt goes to where the white hole is struck, a short way off; the portal, at the far end of the throw, opens by itself)
     shot = { t: 0, delay: res.push ? 0.09 : res.delay, point: res.push ? res.origin : res.point, exit: res.point, radius: res.radius, push: res.push, landed: false, from: body.localToWorld(_v.copy(MUZZLE)).clone(), hist: [] };
     cross.classList.add('kick'); requestAnimationFrame(() => requestAnimationFrame(() => cross.classList.remove('kick')));
+    pull = 1; buzz(res.push ? [40, 30, 90] : Math.round(14 + 40 * power));
     if (res.push) { boom(); say('PUSH', 900); recoilV += 5; } else { bang(res.delay, power); if (power > 0.3) say(power >= maxPower() ? 'VOLLE LADUNG' : 'AUFGELADEN', 900); }
   }
   const canLock = !!view.requestPointerLock;
@@ -611,15 +618,15 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   ];
   const shop = document.createElement('div'); shop.id = 'gun-shop'; shop.hidden = true; shop.setAttribute('role', 'dialog'); shop.setAttribute('aria-label', 'Werkstatt'); document.body.appendChild(shop);
   const drawShop = () => {
-    shop.innerHTML = '<h2>WERKSTATT</h2><p>\u25C6 ' + bank + (bank === 1 ? ' Kern' : ' Kerne') + ' zum Ausgeben. Kerne h\u00E4ngen golden neben der Route.</p>' + ITEMS.map((it, i) => '<div class="row"><div><b>' + it.name() + '</b><span>' + it.text + '</span></div>' +
-      (it.done() ? '<button class="done" disabled>\u2713 GEBAUT</button>' : '<button data-i="' + i + '"' + (bank < it.cost() ? ' disabled' : '') + '>\u25C6 ' + it.cost() + '</button>') + '</div>').join('') + '<button class="close" data-i="x">SCHLIESSEN</button>';
+    shop.innerHTML = '<h2>WERKSTATT</h2><p>\u25C6 ' + bank + (bank === 1 ? ' Kern' : ' Kerne') + ' zum Ausgeben. Kerne h\u00E4ngen golden neben der Route, und jede neue Dimension bringt einen.<br>Logbuch: ' + visited.size + ' von ' + engine.registry.length + ' Dimensionen.</p>' + ITEMS.map((it, i) => '<div class="row"><div><b>' + it.name() + '</b><span>' + it.text + '</span></div>' +
+      (it.done() ? '<button class="done" disabled>\u2713 GEBAUT</button>' : '<button data-i="' + i + '"' + (bank < it.cost() ? ' disabled' : '') + '>\u25C6 ' + it.cost() + '</button>') + '</div>').join('') + '<div class="row"><div><b>ZEITRENNEN</b><span>60 Sekunden: jede Welt z\u00E4hlt 10, jeder Kern 5' + (raceBest ? '. Bestwert ' + raceBest : '') + '</span></div><button data-i="race">START</button></div>' + '<button class="close" data-i="x">SCHLIESSEN</button>';
   };
   const openShop = (on) => {
     shopOpen = on; shop.hidden = !on; engine.throttle = on ? 0.06 : keys.brake ? 0.06 : keys.push ? 2.4 : 1;   // (the flight all but stands while the workshop is open)
     if (on) { mHold = 0; drawShop(); try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {} }
   };
   shop.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b || b.disabled) return; if (b.dataset.i === 'x') return openShop(false);
+    const b = e.target.closest('button'); if (!b || b.disabled) return; if (b.dataset.i === 'x') return openShop(false); if (b.dataset.i === 'race') { openShop(false); return startRace(); }
     const it = ITEMS[Number(b.dataset.i)]; if (!it || it.done() || bank < it.cost()) return;
     bank -= it.cost(); it.buy(); saveUp(); setCells(cells); dispKey = ''; chime(); drawShop();
     if (engine.cur && !engine.cur.def.antechamber) engine.requeue();   // a position of the dial just bought counts from this portal on
@@ -639,6 +646,12 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   // flight's aim from then on (engine steer.target) until it is caught or passed. The flight's own view turns as it goes,
   // so without this a core had to be chased across the picture all the way.
   let lock = null, lockC = null, lockT = 0;
+  // the log of dimensions reached, the trigger finger's pull, the race against the clock
+  const visited = new Set(); try { for (const id of JSON.parse(localStorage.getItem('portals.gun.log') || '[]')) visited.add(id); } catch (e) {}
+  let pull = 0, race = null, raceBest = 0, raceShown = ''; try { raceBest = parseInt(localStorage.getItem('portals.gun.race'), 10) || 0; } catch (e) {}
+  const buzz = (pattern) => { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} };
+  const raceEl = document.createElement('div'); raceEl.id = 'gun-race'; document.body.appendChild(raceEl);
+  const startRace = () => { race = { end: performance.now() + 60000, worlds: 0, cores: 0 }; raceShown = ''; toast('Zeitrennen: 60 Sekunden. Jede neue Welt z\u00E4hlt 10, jeder Kern 5', 4200); };
   const unlock = () => { lock = null; steer.target = null; };
   const spawnCores = (A) => {
     const path = A.path, L = path.length; let n = 0;
@@ -653,7 +666,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     }
   };
   const caught = (c) => {
-    c.on = false; c.gone = 0.4; total++; bank++; saveUp(); if (c === lock) unlock();
+    c.on = false; c.gone = 0.4; total++; bank++; saveUp(); if (c === lock) unlock(); if (race) race.cores++;
     if (!shopTip && bank >= 3) { shopTip = true; setTimeout(() => toast(document.body.classList.contains('gun-touch') ? 'Kerne ausgeben: oben rechts auf die Kerne tippen' : 'Kerne ausgeben: Taste B \u00F6ffnet die Werkstatt', 5200), 1400); }
     const full = cells >= maxCells(); setCells(cells + 1); chime(); say(full ? 'KERN +1' : 'PUSH GELADEN', 1000); charge = 1; heat = Math.max(heat, 0.55); sloshV += 5;
     chip.classList.add('got'); clearTimeout(chipT); chipT = setTimeout(() => chip.classList.remove('got'), 260);
@@ -667,7 +680,9 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const id = W.def.id, code = dimCode(id);
     if (trailIds[trailIds.length - 2] === id) trailIds.pop(); else { trailIds.push(id); if (trailIds.length > 40) trailIds.shift(); }
     const meta = $('title-meta'); if (meta) meta.textContent += ' · Dimension ' + code;
-    stamp.innerHTML = 'DIMENSION <b>' + code + '</b>'; stamp.classList.add('show'); clearTimeout(stampT); stampT = setTimeout(() => stamp.classList.remove('show'), 3200);
+    const fresh = !visited.has(id); if (race && n > 1) race.worlds++;
+    if (fresh) { visited.add(id); try { localStorage.setItem('portals.gun.log', JSON.stringify([...visited])); } catch (e) {} if (visited.size > 1) { bank++; saveUp(); setCells(cells); } }   // (a dimension never reached before brings a core; the very first is a gift already)
+    stamp.innerHTML = 'DIMENSION <b>' + code + '</b> \u00B7 ' + visited.size + '/' + engine.registry.length + (fresh && visited.size > 1 ? ' \u00B7 NEU <b>+1 \u25C6</b>' : ''); stamp.classList.add('show'); clearTimeout(stampT); stampT = setTimeout(() => stamp.classList.remove('show'), 3200);
     if (lastShotWorld && lastShotWorld.shot) { flash.classList.toggle('big', FLASH); flash.classList.add('on'); setTimeout(() => flash.classList.remove('on'), FLASH ? 110 : 70); if (FLASH) { arrived = 0.5; shake = Math.max(shake, 0.7); } }
     lastShotWorld = null; shot = null; rift = null; blast = null;
     // on 'ZURÜCK' the world just left is now the one before: nothing to do, the trail has it. On a tier with nothing left the dial says so.
@@ -732,6 +747,14 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       restT += dt;
       if (restT > 0.5) { const kr = Math.exp(-dt * 1.7); let y = Math.atan2(Math.sin(look.yaw), Math.cos(look.yaw)) * kr, pt = look.pitch * kr; look.yaw = Math.abs(y) < 0.002 ? 0 : y; look.pitch = Math.abs(pt) < 0.002 ? 0 : pt; }
     } else restT = 0;
+    // the forefinger draws back while a shot is held, snaps at the shot and comes forward again
+    pull = Math.max(0, pull - dt * 5); if (foreFinger) { const pl = Math.max(pull, over * 0.75); foreFinger.position.set(0.0025 * pl, 0, 0.0075 * pl); foreFinger.rotation.y = 0.07 * pl; }
+    if (race) {
+      const left = Math.ceil((race.end - now) / 1000);
+      if (left <= 0) { const score = race.worlds * 10 + race.cores * 5, best = score > raceBest; if (best) { raceBest = score; try { localStorage.setItem('portals.gun.race', String(score)); } catch (e) {} }
+        toast('Zeitrennen vorbei: ' + race.worlds + (race.worlds === 1 ? ' Welt' : ' Welten') + ', ' + race.cores + (race.cores === 1 ? ' Kern' : ' Kerne') + ' = ' + score + ' Punkte' + (best ? ' \u00B7 neuer Bestwert!' : ' \u00B7 Bestwert ' + raceBest), 8000); if (best) chime(); race = null; raceEl.textContent = ''; }
+      else { const txt = left + ' s \u00B7 ' + (race.worlds * 10 + race.cores * 5); if (txt !== raceShown) { raceShown = txt; raceEl.textContent = txt; } }
+    }
     // springs: recoil and the fluid's slosh
     recoilV += (-recoil * 190 - recoilV * 17) * dt; recoil += recoilV * dt;
     sloshV += (-slosh * 60 - sloshV * 4.5) * dt; slosh += sloshV * dt; fluidMat.uniforms.uSlosh.value = THREE.MathUtils.clamp(slosh, -1, 1) * 0.12;
@@ -830,7 +853,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       c.rg.position.copy(_v); c.rg.scale.setScalar(sz * (lk ? 4.2 + 0.9 * Math.sin(t * 9) : 3 + 0.5 * Math.sin(t * 2.3 + c.ph))); c.rg.material.opacity = (lk ? 1 : 0.75) * al;
     }
     if (cand === lockC && cand) lockT += dt; else { lockC = cand; lockT = 0; }
-    if (!lock && lockC && lockT > 0.18 && live) { lock = lockC; steer.target = lock.pos; lockC = null; click(); say('ZIEL ERFASST', 900); }
+    if (!lock && lockC && lockT > 0.18 && live) { lock = lockC; steer.target = lock.pos; lockC = null; click(); buzz(8); say('ZIEL ERFASST', 900); }
     if (lock) { if (!lock.on || !A || A !== coreWorld) unlock(); else { A.path.tangentAtDist(A.dist, _ct); if (_w.copy(lock.pos).sub(ec.position).dot(_ct) < -3) unlock(); } }
     // the white hole of a push, for a little over two seconds, where it stands in this camera's picture
     holeCore.material.opacity = holeHalo.material.opacity = 0; for (const r of holeRings) r.material.opacity = 0; ejecta.visible = false;
@@ -859,5 +882,5 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     engine.overlay = () => step(performance.now());
   } else requestAnimationFrame(frame);
 
-  return { setMode, fire, step, cores, get cells() { return cells; }, set cells(v) { setCells(v); }, get total() { return total; }, get lock() { return lock; }, get bank() { return bank; }, set bank(v) { bank = Math.max(0, v | 0); saveUp(); setCells(cells); }, up, openShop, get over() { return over; }, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
+  return { setMode, fire, step, cores, get cells() { return cells; }, set cells(v) { setCells(v); }, get total() { return total; }, get lock() { return lock; }, get race() { return race; }, startRace, visited, get bank() { return bank; }, set bank(v) { bank = Math.max(0, v | 0); saveUp(); setCells(cells); }, up, openShop, get over() { return over; }, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
 }
