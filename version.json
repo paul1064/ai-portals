@@ -1,5 +1,5 @@
 {
- "build": "c9d4f1cd93",
+ "build": "eb61091653",
  "files": {
   "src/companions/the-drift.js": "92861874d6",
   "src/companions/wandering-lantern.js": "d254acb7fc",
@@ -18,7 +18,7 @@
   "src/extras.js": "531597d378",
   "src/gun/clip.js": "e4ff783c76",
   "src/gun/dim.js": "3fd6a1f164",
-  "src/gun/portal-gun.js": "bf6481fa6b",
+  "src/gun/portal-gun.js": "f73ab42bc1",
   "src/kit/core.js": "81ac8f555d",
   "src/kit/fauna/alien.js": "56c6f3f642",
   "src/kit/fauna/birds.js": "3357b660e3",
