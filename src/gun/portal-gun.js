@@ -4,7 +4,8 @@
 //   1 .. 6         the dial's positions by number
 //   first click    takes the mouse (Esc gives it back): from then on the mouse looks round, as in a first-person game
 //   Shift / W      brake to a hover / push on
-// On a touch screen: tap to shoot where you tap, drag to look round, and two buttons at the lower left (the dial; a brake to hold).
+// On a touch screen: tap to shoot where you tap, drag to look round, and buttons at the lower left: the dial, a brake to hold,
+// and NEIGEN, which lets the phone itself be turned to look round (its orientation sensor).
 // On a phone the gun is drawn straight into the picture by the engine's own renderer, after the frame is finished (INLINE below):
 // a second graphics context cost phones their smooth flight. On a desktop:
 // The gun is drawn by a small renderer of its own on a transparent canvas above the picture, so no world's fog, grade or
@@ -65,7 +66,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const stamp = document.createElement('div'); stamp.id = 'gun-stamp';
   const flash = document.createElement('div'); flash.id = 'gun-flash';
   const pad = document.createElement('div'); pad.id = 'gun-pad';
-  pad.innerHTML = '<button id="gun-b-mode" aria-label="Ziel wählen"><small>ZIEL</small><span></span></button><button id="gun-b-brake" aria-label="Bremsen (halten)"><small>HALTEN</small>BREMSE</button>';
+  pad.innerHTML = '<button id="gun-b-mode" aria-label="Ziel wählen"><small>ZIEL</small><span></span></button><button id="gun-b-brake" aria-label="Bremsen (halten)"><small>HALTEN</small>BREMSE</button><button id="gun-b-tilt" aria-label="Umschauen durch Drehen des Handys" aria-pressed="false"><small>HANDY</small>NEIGEN</button>';
   document.body.append(flash, cross, stamp, pad); document.body.classList.add('gun');
 
   // INLINE: no canvas and no context of the gun's own. The engine calls draw() at the end of each of its frames (engine.overlay)
@@ -453,6 +454,42 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const brake = (on) => (e) => { e.preventDefault(); e.stopPropagation(); bBrake.classList.toggle('down', on); keys.brake = on; engine.throttle = keys.brake ? 0.06 : keys.push ? 2.4 : 1; if (on) { try { bBrake.setPointerCapture(e.pointerId); } catch (err) {} } };
   bBrake.addEventListener('pointerdown', brake(true)); for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) bBrake.addEventListener(ev, brake(false));
   pad.addEventListener('contextmenu', (e) => e.preventDefault());
+  // NEIGEN: the phone's own orientation turns the view. The sensor's three angles are made into the way the back of the phone
+  // points (the arithmetic every such control uses); what counts is how far that has turned, left-right and up-down, from
+  // where it pointed when the button was pressed or a portal was last shot. Dragging still works on top of it.
+  const bTilt = pad.querySelector('#gun-b-tilt'), tilt = { on: false, ref: null, now: null, got: 0, heard: null };
+  const _te = new THREE.Euler(), _tq = new THREE.Quaternion(), _tq1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)), _tz = new THREE.Vector3(0, 0, 1), _tq0 = new THREE.Quaternion(), _tf = new THREE.Vector3();
+  const onTilt = (e) => {
+    if (e.alpha == null || e.beta == null || e.gamma == null) return;
+    const rad = Math.PI / 180, turn = ((screen.orientation && screen.orientation.angle) || window.orientation || 0) * rad;
+    _te.set(e.beta * rad, e.alpha * rad, -e.gamma * rad, 'YXZ'); _tq.setFromEuler(_te).multiply(_tq1).multiply(_tq0.setFromAxisAngle(_tz, -turn));
+    _tf.set(0, 0, -1).applyQuaternion(_tq);
+    tilt.now = [Math.atan2(-_tf.x, -_tf.z), Math.asin(Math.max(-1, Math.min(1, _tf.y)))]; tilt.got++;
+    if (!tilt.ref) tilt.ref = tilt.now.slice();
+  };
+  look.absorbed = () => { tilt.ref = tilt.now ? tilt.now.slice() : null; look.gy = look.gp = 0; };   // the flight took the view over: the phone's present pose is the new middle
+  const setTilt = (on, quiet) => {
+    tilt.on = on; bTilt.classList.toggle('down', on); bTilt.setAttribute('aria-pressed', String(on));
+    try { localStorage.setItem('portals.gun.tilt', on ? '1' : '0'); } catch (e) {}
+    window.removeEventListener('deviceorientation', onTilt);
+    tilt.ref = tilt.now = null; tilt.got = 0; look.gy = look.gp = 0; clearTimeout(tilt.heard);
+    if (!on) return;
+    window.addEventListener('deviceorientation', onTilt);
+    tilt.heard = setTimeout(() => { if (tilt.on && !tilt.got) { setTilt(false, true); if (!quiet) toast('Dieses Gerät meldet keine Lage: Neigen geht hier nicht', 3600); } }, 1800);
+    if (!quiet) toast('Neigen an: Handy drehen zum Umschauen', 2600);
+  };
+  bTilt.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  // (on an iPhone the sensor has to be asked for, and only a tap may ask: hence 'click', not 'pointerdown')
+  bTilt.addEventListener('click', async (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (tilt.on) { setTilt(false); toast('Neigen aus', 1600); return; }
+    const D = window.DeviceOrientationEvent;
+    if (!D) { toast('Dieses Gerät meldet keine Lage: Neigen geht hier nicht', 3600); return; }
+    if (typeof D.requestPermission === 'function') { let ok = false; try { ok = (await D.requestPermission()) === 'granted'; } catch (err) {} if (!ok) { toast('Ohne Freigabe des Bewegungssensors geht Neigen nicht', 3600); return; } }
+    setTilt(true);
+  });
+  // chosen on an earlier visit: on again by itself where the sensor needs no asking (an iPhone has to be tapped each time)
+  try { if (localStorage.getItem('portals.gun.tilt') === '1' && window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission !== 'function' && matchMedia('(pointer: coarse)').matches) setTilt(true, true); } catch (e) {}
   view.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('pointerlockchange', () => {
     locked = document.pointerLockElement === view; document.body.classList.toggle('gun-look', locked);
@@ -518,7 +555,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const A = engine.cur, live = !!A && !A.def.antechamber && !blocked();
     if (locked && blocked()) { try { document.exitPointerLock(); } catch (e) {} }
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
-    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal schießen · Wischen: umschauen · ZIEL: Welt wählen' : 'Linksklick: Portal schießen · Mausrad oder Q/E: Ziel wählen', 6000); }
+    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal schießen · Wischen oder NEIGEN: umschauen · ZIEL: Welt wählen' : 'Linksklick: Portal schießen · Mausrad oder Q/E: Ziel wählen', 6000); }
     cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready));
     if (lostAt) return;
     if (engine.stats) { engine.stats.gunLevel = level; engine.stats.gunFps = Math.round(fpsE); }   // for the debug panel (?debug=1)
@@ -540,6 +577,10 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     tipGlow.material.opacity = 0.18 + 0.4 * charge * (0.6 + 0.4 * pulse) + heat; tipGlow.scale.setScalar(0.035 + 0.03 * charge + 0.22 * heat * heat);
     tipCore.scale.setScalar(0.4 + 0.8 * charge + 2.5 * heat); tipCore.visible = charge > 0.25 || heat > 0;
     vialGlow.material.opacity = 0.1 + 0.16 * charge; vialLight.intensity = 0.006 + 0.012 * charge + 0.03 * heat; muzzleLight.intensity = 0.5 * heat * heat;
+    if (tilt.on && tilt.ref && tilt.now) {
+      let dy = tilt.now[0] - tilt.ref[0]; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const dp = tilt.now[1] - tilt.ref[1], kt = 1 - Math.exp(-dt * 18);
+      let gy = look.gy || 0; gy += Math.atan2(Math.sin(dy - gy), Math.cos(dy - gy)) * kt; look.gy = gy; look.gp = (look.gp || 0) + (dp - (look.gp || 0)) * kt;
+    }
     // springs: recoil and the fluid's slosh
     recoilV += (-recoil * 190 - recoilV * 17) * dt; recoil += recoilV * dt;
     sloshV += (-slosh * 60 - sloshV * 4.5) * dt; slosh += sloshV * dt; fluidMat.uniforms.uSlosh.value = THREE.MathUtils.clamp(slosh, -1, 1) * 0.12;

@@ -872,7 +872,7 @@ export class Engine {
     else { this.arrived += dt; this._turn(this.camQuat, _q, dt); }
     cam.quaternion.copy(this.camQuat);
     // the viewer may look round (the portal gun, src/gun): a turn and a tilt of the head laid over the flight gaze
-    if (this.look) { const lk = this.look, ly = lk.yaw + (lk.sy || 0), lp = lk.pitch + (lk.sp || 0); if (ly || lp) cam.quaternion.multiply(_lookQ.setFromEuler(_lookE.set(lp, ly, 0, 'YXZ'))); }   // (sy, sp: a shake laid over it, the gun's)
+    if (this.look) { const lk = this.look, ly = lk.yaw + (lk.sy || 0) + (lk.gy || 0), lp = Math.max(-1.45, Math.min(1.45, lk.pitch + (lk.gp || 0))) + (lk.sp || 0); if (ly || lp) cam.quaternion.multiply(_lookQ.setFromEuler(_lookE.set(lp, ly, 0, 'YXZ'))); }   // (sy, sp: a shake laid over it, the gun's; gy, gp: the phone itself turned)
 
     // a feed world shows the next world itself, so its opening is open as soon as there is a next world
     let revealT = B ? (A.feed ? 1 : 1 - smoothstep(A.revealDist * 0.6, A.revealDist, remaining)) : 0;
@@ -1042,7 +1042,7 @@ export class Engine {
     if (!this.canShoot()) return null;
     const A = this.cur, cam = this.camera, L = A.path.length, was = A.shot;
     const dir = new THREE.Vector3(nx, ny, 0.5).unproject(cam).sub(cam.position).normalize();
-    if (this.look) { this.camQuat.copy(cam.quaternion); this.look.yaw = this.look.pitch = 0; }   // the flight takes over the way the viewer was looking
+    if (this.look) { this.camQuat.copy(cam.quaternion); this.look.yaw = this.look.pitch = 0; if (this.look.absorbed) this.look.absorbed(); }   // the flight takes over the way the viewer was looking
     const v0 = was ? was.v : L / A.duration, P = was ? A.portal : A.shotPortal, r = P.hx;
     let D = clamp(Math.max(this.speed, v0) * 4.2, r * 3.5, r * 14), surface = false;
     const hit = this._shotHit(cam.position, dir, r * 1.3, D + r * 8);   // (looked for well past the opening: ground met at a shallow angle a little further on still cuts into it)
