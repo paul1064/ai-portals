@@ -86,7 +86,7 @@ body.gun-touch #gun-pad { display: flex; }
 #gun-race:empty { display: none; }
 #gun-cores small { font-size: 11px; opacity: .75; margin-left: .7em; }
 body.notitles #gun-cores { display: none; }
-@media (max-height: 480px) { #gun-pad { bottom: calc(74px + env(safe-area-inset-bottom, 0px)); flex-direction: row; } }
+@media (max-height: 480px) { #gun-pad { bottom: calc(74px + env(safe-area-inset-bottom, 0px)); flex-direction: row; gap: 8px; } #gun-pad button { min-width: 82px; width: 82px; padding: 0 4px; font-size: 12px; letter-spacing: .06em; } }
 `;
 
 export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }) {
