@@ -1037,9 +1037,17 @@ export class Engine {
     if (this.look) { this.camQuat.copy(cam.quaternion); this.look.yaw = this.look.pitch = 0; }   // the flight takes over the way the viewer was looking
     const v0 = was ? was.v : L / A.duration, P = was ? A.portal : A.shotPortal, r = P.hx;
     let D = clamp(Math.max(this.speed, v0) * 4.2, r * 3.5, r * 14), surface = false;
-    const hit = this._shotHit(cam.position, dir, r * 1.3, D + r);
-    if (hit != null) { D = Math.max(hit - r * 0.3, r * 1.8); surface = true; }
-    const P0 = cam.position.clone(), T0 = A.path.tangentAtDist(A.dist, new THREE.Vector3()), P1 = P0.clone().addScaledVector(dir, D);
+    const hit = this._shotHit(cam.position, dir, r * 1.3, D + r * 8);   // (looked for well past the opening: ground met at a shallow angle a little further on still cuts into it)
+    const P0 = cam.position.clone(), T0 = A.path.tangentAtDist(A.dist, new THREE.Vector3()), P1 = P0.clone();
+    if (hit) {
+      // The opening stands square to the shot. On a surface met aslant (the ground, most of all) half of it would lie behind
+      // the surface, so it is lifted off along the surface's own normal until its whole rim stands clear.
+      surface = hit.dist <= D + r;
+      const along = Math.min(D, Math.max(hit.dist - r * 0.3, r * 0.5)), n = hit.normal; P1.addScaledVector(dir, along);
+      if (n) { const c = Math.abs(n.dot(dir)), need = r * Math.sqrt(Math.max(0, 1 - c * c)) * 1.08 + r * 0.1, have = (hit.dist - along) * c; if (have < need) P1.addScaledVector(n, need - have); }
+      D = P1.distanceTo(P0);
+      if (D < r * 1.8) { P1.sub(P0).setLength(r * 1.8).add(P0); D = r * 1.8; }
+    } else P1.addScaledVector(dir, D);
     const path = core.makePath([P0, P0.clone().addScaledVector(T0, D * 0.16).addScaledVector(dir, D * 0.06), P1.clone().addScaledVector(dir, -D * 0.38), P1], { samples: 64 });
     const u0 = was ? clamp(was.u0 + A.dist / was.L0, 0, 1) : clamp(A.dist / L, 0, 1), L0 = was ? was.L0 : L;
     if (!was) { const old = A.portal; old.group.removeFromParent(); old.dispose(); A.portal = P; A.shotPortal = null; }
@@ -1059,7 +1067,7 @@ export class Engine {
   _shotHit(origin, dir, near, far) {
     const A = this.cur, rc = this._rc || (this._rc = new THREE.Raycaster()), hits = [], t0 = performance.now(), skip = [A.portal.group, A.shotPortal && A.shotPortal.group];
     rc.set(origin, dir); rc.near = near; rc.far = far; rc.camera = this.camera;
-    let best = null;
+    let best = null, bestHit = null;
     const walk = (o) => {
       if (!o.visible || skip.includes(o) || performance.now() - t0 > 24) return;
       if (o.isMesh && !o.isSkinnedMesh && o.geometry) {
@@ -1068,14 +1076,25 @@ export class Engine {
         const solid = m && m.visible !== false && m.depthWrite !== false && m.blending === THREE.NormalBlending && !(m.transparent && m.opacity < 0.6) && m.side !== THREE.BackSide;
         if (solid && tris > 0 && tris < 300000 && !(o.isInstancedMesh && o.count * tris > 400000)) {
           hits.length = 0; try { o.raycast(rc, hits); } catch (e) { /* a mesh that cannot be asked is flown through */ }
-          for (const h of hits) if (h.distance >= near && (best == null || h.distance < best)) best = h.distance;
+          for (const h of hits) if (h.distance >= near && (best == null || h.distance < best)) { best = h.distance; bestHit = h; }
           if (best != null) rc.far = best;
         }
       }
       for (const c of o.children) walk(c);
     };
     try { walk(A.scene); } catch (e) { /* no hit */ }
-    return best;
+    if (best == null) return null;
+    // the surface's normal there, in the world and turned toward the shot (null where the mesh gives none)
+    let normal = null;
+    try {
+      const o = bestHit.object, f = bestHit.face;
+      if (f && f.normal) {
+        normal = f.normal.clone();
+        if (o.isInstancedMesh && bestHit.instanceId != null) { o.getMatrixAt(bestHit.instanceId, _m); normal.transformDirection(_m.premultiply(o.matrixWorld)); } else normal.transformDirection(o.matrixWorld);
+        if (!(normal.lengthSq() > 0.5)) normal = null; else if (normal.dot(dir) > 0) normal.negate();
+      }
+    } catch (e) { normal = null; }
+    return { dist: best, normal };
   }
   // The world waiting behind the portal is let go and another is asked for (the gun's dial was turned: this.chooser answers).
   // Not in the last metres before a portal, where the crossing is already under way.

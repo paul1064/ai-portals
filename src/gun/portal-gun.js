@@ -61,13 +61,19 @@ export function setupGun({ engine, hearts, toast, soundOn }) {
   scene.add(cam);
 
   // ---------- light: a small studio, mirrored in the metal, and the world's own key ----------
-  {
+  const makeEnv = () => {
     const env = new THREE.Scene(), box = (w, h, x, y, z, c, k) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); env.add(m); };
     env.add(new THREE.Mesh(new THREE.SphereGeometry(30, 24, 12), new THREE.MeshBasicMaterial({ color: 0x3a4150, side: THREE.BackSide })));
     box(16, 10, -9, 11, 5, '#eaf2ff', 14); box(7, 14, 12, 3, 4, '#fff1dc', 8); box(22, 5, 0, 6, -14, '#9fd0ff', 5); box(14, 14, 0, -12, 0, '#6a7080', 1.6); box(4, 4, -6, -2, 12, '#ffffff', 10); box(24, 2, 0, 1, 15, '#cfe0ff', 7); box(6, 16, -14, 0, -3, '#dfe8ff', 6);
     const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(env, 0.035).texture; pm.dispose();
     env.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
-  }
+  };
+  makeEnv();
+  // the browser may take this second graphics context away (many tabs, a driver hiccup): it is asked to give it back, and the
+  // studio light and the display are made again when it does. Without this the gun stayed gone for the rest of the visit.
+  let lostAt = 0;
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); lostAt = performance.now(); });
+  canvas.addEventListener('webglcontextrestored', () => { lostAt = 0; try { makeEnv(); } catch (err) { console.warn('portal gun', err); } dispKey = ''; w = 0; });
   const key = new THREE.DirectionalLight(0xffffff, 3.2); key.position.set(-0.5, 1, 0.6); cam.add(key); cam.add(key.target); key.target.position.set(0, 0, -0.5);
   const hemi = new THREE.HemisphereLight(0xe6eeff, 0x3a3f4a, 1.1); scene.add(hemi);
 
@@ -303,7 +309,7 @@ export function setupGun({ engine, hearts, toast, soundOn }) {
   }
 
   // ---------- firing ----------
-  const blocked = () => document.body.classList.contains('atlas-open') || !!$('about') || !$('veil').classList.contains('gone');
+  const blocked = () => { const ab = $('about'); return document.body.classList.contains('atlas-open') || (!!ab && !ab.hidden) || !$('veil').classList.contains('gone'); };   // (the About stays in the page once opened, hidden: only an open one counts)
   const _v = new THREE.Vector3(), _w = new THREE.Vector3();
   function fire(cx, cy) {
     if (blocked() || raise < 0.6) return;
@@ -382,6 +388,7 @@ export function setupGun({ engine, hearts, toast, soundOn }) {
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
     if (live && !firstUp && raise > 0.5) { firstUp = true; toast('Linksklick: Portal schießen · Mausrad oder Q/E: Ziel wählen', 6000); }
     cross.classList.toggle('on', live && (hover || locked) && raise > 0.6); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready));
+    if (lostAt) return;
     if (raise < 0.004 && !shot) { if (!cleared) { renderer.clear(); cleared = true; } return; }
     cleared = false;
 
