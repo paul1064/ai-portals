@@ -516,11 +516,11 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   if (matchMedia('(pointer: coarse)').matches) touchOn();
   view.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'mouse') { touchOn(); keyLook = false; fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, at: performance.now(), moved: false }); try { view.setPointerCapture(e.pointerId); } catch (err) {} return; }
-    if (e.button === 2) { if (locked) fire(window.innerWidth / 2, window.innerHeight / 2, true); else fire(e.clientX, e.clientY, true); return; }
+    if (e.button === 2) { fire(window.innerWidth / 2, window.innerHeight / 2, true); return; }   // (with a mouse the sight is the middle of the picture, taken or not)
     if (e.button !== 0) return;
     if (locked) { mHold = performance.now(); return; }
     if (canLock && !blocked()) { try { const p = view.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* the click fires instead */ } }
-    fire(e.clientX, e.clientY);
+    fire(window.innerWidth / 2, window.innerHeight / 2);
   });
   window.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse' || e.button !== 0 || !mHold) return; const pw = powerOf(mHold); mHold = 0; if (locked) fire(window.innerWidth / 2, window.innerHeight / 2, false, pw); });
   view.addEventListener('pointermove', (e) => {
@@ -599,7 +599,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const c = e.code;
     // X held and let go is the charged shot too (a touchpad's tap cannot be held)
     if (c === 'KeyZ') { if (on && !e.repeat) slowMo(); return; }   // slow motion: five seconds for one core
-    if (c === 'KeyX') { if (on) { if (!e.repeat && !mHold) mHold = performance.now(); } else if (mHold) { const pw = powerOf(mHold); mHold = 0; fire(locked ? window.innerWidth / 2 : (mx + 1) / 2 * window.innerWidth, locked ? window.innerHeight / 2 : (1 - my) / 2 * window.innerHeight, false, pw); } return; }
+    if (c === 'KeyX') { if (on) { if (!e.repeat && !mHold) mHold = performance.now(); } else if (mHold) { const pw = powerOf(mHold); mHold = 0; fire(window.innerWidth / 2, window.innerHeight / 2, false, pw); } return; }
     if (c === 'KeyS') keys.brake = on; else if (c === 'KeyW') keys.push = on;
     else if (c === 'KeyA') keys.left = on; else if (c === 'KeyD') keys.right = on;
     else if (c === 'Space') keys.up = on; else if (c === 'KeyC' || c === 'ShiftLeft') keys.down = on;
@@ -621,9 +621,10 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   });
   window.addEventListener('pointermove', (e) => {
     if (locked) { hover = true; mx = 0; my = 0; return; }
-    hover = e.target === view && e.pointerType !== 'touch';
-    mx = (e.clientX / window.innerWidth) * 2 - 1; my = -(e.clientY / window.innerHeight) * 2 + 1;
-    cross.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+    if (e.pointerType === 'touch') { hover = false; return; }   // (a finger's sight is where it taps)
+    // a mouse: the sight stays in the middle of the picture, where the shot goes, wherever the pointer is
+    hover = e.target === view; mx = 0; my = 0;
+    cross.style.transform = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px)`;
   }, { passive: true });
   document.addEventListener('pointerleave', () => { hover = false; });
 
