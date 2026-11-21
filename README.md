@@ -139,6 +139,7 @@ Changed against the original tree (commit `210133f`):
 - `src/main.js`: two lines that switch the gun on (`?gun=0` switches it off).
 - `README.md`: the notice at the top and the two sections about the gun.
 - `.nojekyll` (new, empty): tells GitHub Pages to serve the files as they are.
+- `index.html`, `tools/stamp.mjs` and `version.json` (the last two new): on every visit the page asks for `version.json` uncached and fetches afresh the scripts that changed since the visitor was last here, so an update is whole at once. Run `npm run stamp` before each push that changes anything under `src/`.
 
 Nothing else was touched. Like the original, the additions were written by an AI agent (Claude) at a person's direction.
 

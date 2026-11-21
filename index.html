@@ -76,7 +76,24 @@
   <button id="sh-photo" role="menuitem" title="Save the view as a picture (P)">Save picture</button>
 </div>
 <div id="debug"></div>
-<script type="module" src="./src/main.js"></script>
+<script type="module">
+// Before the page's own script: has anything changed since this visitor was last here? version.json (tools/stamp.mjs) is
+// asked for uncached and holds a fingerprint of each script; the ones that differ from last time are fetched afresh,
+// past the browser's kept copies, so an update is whole from the first visit after it and not a mix of old and new.
+try {
+  const r = await fetch('./version.json', { cache: 'no-store' });
+  if (r.ok) {
+    const now = (await r.json()).files || {}, KEY = 'portals.files';
+    let was = null; try { was = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+    // (nothing remembered: the scripts that have changed since the first release, in case this browser kept them from before this check existed)
+    const hot = /^src\/(main\.js|extras\.js|gun\/|core\/|ui\/)/;
+    const stale = Object.keys(now).filter((f) => (was ? was[f] !== now[f] : hot.test(f)));
+    if (stale.length) await Promise.race([Promise.all(stale.map((f) => fetch('./' + f, { cache: 'reload' }).then((x) => x.arrayBuffer()).catch(() => {}))), new Promise((done) => setTimeout(done, 8000))]);
+    try { localStorage.setItem(KEY, JSON.stringify(now)); } catch (e) {}
+  }
+} catch (e) { /* offline or no version file: the page starts as it always did */ }
+import('./src/main.js');
+</script>
 <script nomodule>document.getElementById('veil-sub').textContent = 'this browser is too old to show the worlds';</script>
 </body>
 </html>
