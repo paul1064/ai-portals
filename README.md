@@ -54,7 +54,7 @@ This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself 
 | Input | What it does |
 |---|---|
 | Left click | Open a portal where the crosshair points; the flight turns into it |
-| Hold, then let go | A charged shot: the portal stands further off, is wider and is flown to faster (on a phone: hold a finger still) |
+| Hold, then let go (or hold X) | A charged shot: the portal stands further off, is wider and is flown to faster (on a phone: hold a finger still) |
 | Right click | The push: a white hole where the crosshair points hurls you back and up, to a portal at the end of the throw |
 | Mouse wheel, Q / E | Turn the dial: Zufall, Irdisch, Fremd, Bizarr, Favorit, Zurück |
 | 1 to 6 | The dial's positions by number |

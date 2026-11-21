@@ -575,6 +575,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const steer = engine.steer = { x: 0, y: 0, look: 1 };
   const setKey = (e, on) => {
     const c = e.code;
+    // X held and let go is the charged shot too (a touchpad's tap cannot be held)
+    if (c === 'KeyX') { if (on) { if (!e.repeat && !mHold) mHold = performance.now(); } else if (mHold) { const pw = powerOf(mHold); mHold = 0; fire(locked ? window.innerWidth / 2 : (mx + 1) / 2 * window.innerWidth, locked ? window.innerHeight / 2 : (1 - my) / 2 * window.innerHeight, false, pw); } return; }
     if (e.key === 'Shift' || c === 'KeyS' || c === 'ArrowDown') keys.brake = on; else if (c === 'KeyW' || c === 'ArrowUp') keys.push = on;
     else if (c === 'KeyA' || c === 'ArrowLeft') keys.left = on; else if (c === 'KeyD' || c === 'ArrowRight') keys.right = on;
     else if (c === 'Space') keys.up = on; else if (c === 'KeyC') keys.down = on; else return;
@@ -693,7 +695,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const A = engine.cur, live = !!A && !A.def.antechamber && !blocked();
     if (locked && blocked()) { try { document.exitPointerLock(); } catch (e) {} }
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
-    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal (halten l\u00E4dt auf) · PUSH: wegschleudern · Wischen oder NEIGEN: umschauen' : 'Linksklick: Portal (halten l\u00E4dt auf) · Rechtsklick: Push · WASD: fliegen · Mausrad: Ziel', 6000); }
+    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal (halten l\u00E4dt auf) · PUSH: wegschleudern · Wischen oder NEIGEN: umschauen' : 'Linksklick: Portal (halten oder X halten l\u00E4dt auf) · Rechtsklick: Push · WASD: fliegen · Mausrad: Ziel', 6000); }
     cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready)); chip.classList.toggle('on', live && raise > 0.6);
     if (lostAt) return;
     if (engine.stats) { engine.stats.gunLevel = level; engine.stats.gunFps = Math.round(fpsE); }   // for the debug panel (?debug=1)
@@ -709,7 +711,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     // charge, heat, colour
     charge = Math.min(1, charge + dt / cooldown); heat = Math.max(0, heat - dt * 1.6);
     // a shot held back: the mouse button, or a finger that has not moved
-    { let at = locked ? mHold : 0; for (const f of fingers.values()) if (!f.moved && (!at || f.at < at)) at = f.at;
+    { let at = mHold; for (const f of fingers.values()) if (!f.moved && (!at || f.at < at)) at = f.at;
       over = at && live && charge >= 1 ? powerOf(at) : 0; cross.classList.toggle('over', over > 0);
       if (over > 0 && !hum) { const a = audio(); if (a) { const o = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain(); o.type = 'sawtooth'; f.type = 'lowpass'; f.frequency.value = 1100; g.gain.value = 0.03; o.connect(f); f.connect(g); g.connect(a.destination); o.start(); hum = o; } }
       if (hum) { if (over > 0) hum.frequency.value = 70 + 320 * over; else { try { hum.stop(); } catch (e) {} hum = null; } } }
