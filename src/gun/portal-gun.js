@@ -263,7 +263,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   // at 2. The frame rate decides from there: under 40 a second for a few seconds takes a level away; a steady 56 gives one
   // back, once, and never to a phone the engine put on 'low'.
   let level = engine.mobile ? (engine.tier === 'low' ? 0 : 1) : 2, levelOn = -1, fpsE = 60, lowT = 0, highT = 0, noRaise = 0, drops = 0, frameNo = 0, prevNow = 0;
-  const pixelRatio = () => { const d = window.devicePixelRatio || 1; return level === 2 ? Math.min(d, engine.mobile ? 1.25 : 1.5) : level === 1 ? Math.min(d, engine.mobile ? 0.85 : 1) : Math.min(d, 0.7); };
+  const pixelRatio = () => { const d = window.devicePixelRatio || 1; return level === 2 ? Math.min(d, engine.mobile ? 1.25 : 1.5) : level === 1 ? Math.min(d, engine.mobile ? 0.85 : 1) : Math.min(d, 0.9); };   // (level 0 draws a third of the screen, so it can afford to be less coarse)
   let charge = 1, raise = 0, recoil = 0, recoilV = 0, heat = 0, slosh = 0, sloshV = 0, knobAng = 0, mx = 0.25, my = -0.1, aimX = 0, aimY = 0, hover = false, note = '', noteUntil = 0, shot = null, lastShotWorld = null, dispKey = '', swayX = 0, swayY = 0;
   const lastQ = new THREE.Quaternion(); let lastQSet = false;
 
@@ -446,13 +446,23 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const gap = prevNow ? now - prevNow : 16.7; prevNow = now;
     if (level !== levelOn) { levelOn = level; w = 0; sparkGeo.setDrawRange(0, level === 2 ? NS : NS >> 1); lineGeo.setDrawRange(0, level === 2 ? NL * 2 : (NL >> 1) * 2); }
     const W = window.innerWidth, H = window.innerHeight;
-    if (W !== w || H !== h) { w = W; h = H; renderer.setPixelRatio(pixelRatio()); renderer.setSize(W, H, false); cam.aspect = W / H; cam.updateProjectionMatrix(); }
+    if (W !== w || H !== h) {
+      // On level 0 the canvas is only the corner the gun stands in, not the whole screen: a see-through layer over the whole
+      // picture is itself a cost on a phone, every frame, whether or not anything is drawn into it. The camera is told
+      // which part of the full picture that corner is, so the gun stands exactly where it did.
+      w = W; h = H; const part = level === 0, cw = part ? Math.round(W * 0.66) : W, ch = part ? Math.round(H * 0.5) : H;
+      Object.assign(canvas.style, { left: (W - cw) + 'px', top: (H - ch) + 'px', right: 'auto', bottom: 'auto', width: cw + 'px', height: ch + 'px' });
+      renderer.setPixelRatio(pixelRatio()); renderer.setSize(cw, ch, false); cam.aspect = W / H;
+      if (part) cam.setViewOffset(W, H, W - cw, H - ch, cw, ch); else cam.clearViewOffset();
+      cam.updateProjectionMatrix();
+    }
     const A = engine.cur, live = !!A && !A.def.antechamber && !blocked();
     if (locked && blocked()) { try { document.exitPointerLock(); } catch (e) {} }
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
     if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal schießen · Wischen: umschauen · ZIEL: Welt wählen' : 'Linksklick: Portal schießen · Mausrad oder Q/E: Ziel wählen', 6000); }
     cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready));
     if (lostAt) return;
+    if (engine.stats) { engine.stats.gunLevel = level; engine.stats.gunFps = Math.round(fpsE); }   // for the debug panel (?debug=1)
     if (raise > 0.9 && gap < 250 && !engine.settings.paused && document.visibilityState === 'visible') {
       fpsE += (1000 / Math.max(gap, 1) - fpsE) * 0.05;
       if (fpsE < 40) { lowT += dt; highT = 0; } else if (fpsE > 56) { highT += dt; lowT = 0; } else lowT = highT = 0;
@@ -513,6 +523,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
         else { burst.material.opacity = 0; if (shot.t > shot.delay + 1.2) shot = null; }
       }
     } else { bolt.material.opacity = 0; boltCore.material.opacity = 0; burst.material.opacity = 0; }
+    if (level === 0) { bolt.material.opacity = boltCore.material.opacity = burst.material.opacity = 0; for (const s of trail) s.material.opacity = 0; }   // (the bolt would leave the corner the canvas covers)
 
     if (FLASH) {
       // the shake (a turn of the head the engine lays over the view), dying away; none on a gentle flight
@@ -530,7 +541,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       }
       // the shock ring and the sparks, where the portal stands in this camera's picture
       sparks.visible = false; ring.material.opacity = 0;
-      if (rift && A) {
+      if (rift && A && level > 0) {
         _v.copy(rift.point).project(ec); const depth = _w.copy(rift.point).sub(ec.position).length();
         if (_v.z < 1 && depth > 0.5) {
           _v.set(_v.x, _v.y, 0.5).unproject(cam).sub(cam.position).normalize().multiplyScalar(depth);
