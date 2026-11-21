@@ -18,6 +18,7 @@ const _Gi = new THREE.Matrix4(), _C = new THREE.Matrix4();
 const _qs = new THREE.Quaternion(), _M = new THREE.Matrix4(), _e = new THREE.Euler(), _v4 = new THREE.Vector4(), _poi = new THREE.Vector3();
 const Y = new THREE.Vector3(0, 1, 0);
 const _lookQ = new THREE.Quaternion(), _lookE = new THREE.Euler();
+const _sf = new THREE.Vector3(), _sg = new THREE.Vector3(), _sr = new THREE.Vector3(), _st = new THREE.Vector3();
 // The steady camera's turn: no faster than STEADY_TURN (radians a second) whatever a world's gaze asks, until the gaze
 // has run more than STEADY_LAG ahead of it (so a hairpin cannot leave it looking backwards for long).
 const STEADY_TURN = 30 * Math.PI / 180, STEADY_LAG = 60 * Math.PI / 180, _qp = new THREE.Quaternion();
@@ -662,7 +663,7 @@ export class Engine {
     const A = this.cur, B = this.next;
     _M.multiplyMatrices(B.entry, A.exitInv);
     _M.decompose(_p, _q, _s);
-    this.camQuat.premultiply(_q);
+    this.camQuat.premultiply(_q); if (this.off) this.off.applyQuaternion(_q);   // the offset from the route crosses with the view
     B.dist = A.dist - A.path.length;
     // a hurry ends at the portal: the speed carried into the next world is no more than this world's own unhurried pace at its end,
     // and into a slower world no more than the doorway's pace (frame(): the next world's opening pace, or DOOR_FLOOR of this cruise)
@@ -855,6 +856,7 @@ export class Engine {
         // portal is not reached before they have met. It only binds where the next world was ready late, close to the portal.
         if (this.blend < 0.98) target = Math.min(target, Math.max(remaining, 0.5) * 0.72 / (1 - this.blend));
       }
+      if (this.steer && !A.def.antechamber) target *= 0.2 + 0.8 * (this._steerFwd ?? 1);   // steering (src/gun): looking aside or back, the flight along the route slows
       if (this.throttle != null && !A.def.antechamber) { this._thr = (this._thr ?? 1) + (this.throttle - (this._thr ?? 1)) * (1 - Math.exp(-dt * 5)); target *= this._thr; }   // the viewer brakes or pushes (src/gun)
       this.speed += (target - this.speed) * (1 - Math.exp(-dt * (this.arrived < ARRIVE_SPEED && target > this.speed ? 0.45 + 0.95 * smoothstep(0, ARRIVE_SPEED, this.arrived) : 1.4)));
       A.dist += this.speed * dt;
@@ -873,6 +875,10 @@ export class Engine {
     cam.quaternion.copy(this.camQuat);
     // the viewer may look round (the portal gun, src/gun): a turn and a tilt of the head laid over the flight gaze
     if (this.look) { const lk = this.look, ly = lk.yaw + (lk.sy || 0) + (lk.gy || 0), lp = Math.max(-1.45, Math.min(1.45, lk.pitch + (lk.gp || 0))) + (lk.sp || 0); if (ly || lp) cam.quaternion.multiply(_lookQ.setFromEuler(_lookE.set(lp, ly, 0, 'YXZ'))); }   // (sy, sp: a shake laid over it, the gun's; gy, gp: the phone itself turned)
+    // STEERING (src/gun). The viewer flies where they look and may slip aside: an offset from the route, kept inside a tube
+    // round it. Everything else still goes by the place on the route, so loading, the portal and the crossing are untouched.
+    if (this.steer && !frozen && !A.def.antechamber) this._steer(A, dt, remaining);
+    if (this.off && !A.def.antechamber) cam.position.add(this.off);
 
     // a feed world shows the next world itself, so its opening is open as soon as there is a next world
     let revealT = B ? (A.feed ? 1 : 1 - smoothstep(A.revealDist * 0.6, A.revealDist, remaining)) : 0;
@@ -1029,6 +1035,28 @@ export class Engine {
     this._resize(true);
     this.events.quality(this.tier, this.qualitySetting);
   }
+  // One step of the steering. The offset drifts toward where the viewer looks (the part of their view that leaves the flight's
+  // own gaze, so the flight looking at a set piece by itself moves nobody) and with the keys (steer.x right, steer.y up). The
+  // tube is a little over two portal radii wide, narrower on a short route, and closes to half a radius at the portal so
+  // the crossing is always inside the opening; downward there is little room, since the route often runs just above the ground.
+  _steer(A, dt, remaining) {
+    const st = this.steer, off = this.off || (this.off = new THREE.Vector3()), cam = this.camera, L = A.path.length;
+    const r = Math.min(A.portal.hx, A.portal.hy) || 7, wide = Math.min(clamp(r * 2.3, 4, 24), L * 0.25);
+    _sf.set(0, 0, -1).applyQuaternion(cam.quaternion); _sg.set(0, 0, -1).applyQuaternion(this.camQuat); _sr.set(1, 0, 0).applyQuaternion(cam.quaternion);
+    this._steerFwd = st.look === 0 ? 1 : clamp(_sf.dot(_sg), 0, 1);
+    if (dt > 0) {
+      A.path.tangentAtDist(A.dist, _st);
+      const cruise = (L / A.duration) * this.settings.speed, v = Math.max(this.speed, cruise * 0.5);
+      _sf.sub(_sg); _sf.addScaledVector(_st, -_sf.dot(_st));               // the view's turn away from the gaze, across the route only
+      off.addScaledVector(_sf, v * dt * (st.look ?? 1));
+      if (st.x) { _sr.addScaledVector(_st, -_sr.dot(_st)); off.addScaledVector(_sr, st.x * cruise * 0.9 * dt); }
+      if (st.y) off.y += st.y * cruise * 0.9 * dt;
+    }
+    const lim = r * 0.5 + (wide - r * 0.5) * smoothstep(r * 1.2, r * 6, remaining), down = Math.min(1.2, wide * 0.15, lim);
+    if (off.y < -down) off.y = -down;
+    const len = off.length(); if (len > lim) off.multiplyScalar(lim / len);
+  }
+
   // ---------- the portal gun (src/gun/portal-gun.js) ----------
   // The viewer may open a portal of their own: shoot(x, y) puts one where the ray through that point of the picture (-1..1)
   // ends, a few seconds of flight away or just short of the first solid thing in the way, and the flight leaves the world's
@@ -1051,6 +1079,7 @@ export class Engine {
     let D = clamp(Math.max(this.speed, v0) * 4.2, r * 3.5, r * 14) * (push ? 1.5 : 1), surface = false;
     const hit = this._shotHit(cam.position, aim, r * 1.3, D + r * 8);   // (looked for well past the opening: ground met at a shallow angle a little further on still cuts into it)
     const P0 = cam.position.clone(), T0 = A.path.tangentAtDist(A.dist, new THREE.Vector3()), P1 = P0.clone();
+    if (this.off) this.off.set(0, 0, 0);   // the new route starts where the viewer is, offset and all
     if (hit) {
       // The opening stands square to the shot. On a surface met aslant (the ground, most of all) half of it would lie behind
       // the surface, so it is lifted off along the surface's own normal until its whole rim stands clear.

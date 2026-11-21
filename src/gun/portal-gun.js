@@ -4,7 +4,8 @@
 //   wheel, Q / E   turn the dial: which kind of world waits behind the next portal
 //   1 .. 6         the dial's positions by number
 //   first click    takes the mouse (Esc gives it back): from then on the mouse looks round, as in a first-person game
-//   Shift / W      brake to a hover / push on
+//   W A S D, arrows  fly: W pushes on, S (or Shift) brakes to a hover, A and D slip sideways; space rises, C sinks
+//   looking         the flight drifts toward where you look, inside a tube round the world's route (engine._steer)
 // On a touch screen: tap to shoot where you tap, drag to look round, and buttons at the lower left: the dial, a brake to hold,
 // and NEIGEN, which lets the phone itself be turned to look round (its orientation sensor).
 // On a phone the gun is drawn straight into the picture by the engine's own renderer, after the frame is finished (INLINE below):
@@ -515,17 +516,25 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   view.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('pointerlockchange', () => {
     locked = document.pointerLockElement === view; document.body.classList.toggle('gun-look', locked);
-    if (locked) { cross.style.transform = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px)`; if (!lockTip) { lockTip = true; toast('Maus schaut sich um · Shift bremst · W gibt Schub · Esc gibt die Maus frei', 6500); } }
+    if (locked) { cross.style.transform = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px)`; if (!lockTip) { lockTip = true; toast('Du fliegst, wohin du schaust · WASD, Leertaste, C: steuern · Esc gibt die Maus frei', 6500); } }
   });
   document.addEventListener('mousemove', (e) => {
     if (!locked) return;
     const k = 0.0021 * Math.min(1, engine.camera.fov / 60);
     look.yaw = (look.yaw - e.movementX * k) % (Math.PI * 2); look.pitch = THREE.MathUtils.clamp(look.pitch - e.movementY * k, -1.35, 1.35);
   });
-  const setKey = (e, on) => { if (e.key === 'Shift') keys.brake = on; else if (e.key === 'w' || e.key === 'W' || e.code === 'ArrowUp') keys.push = on; else return; engine.throttle = keys.brake ? 0.06 : keys.push ? 2.4 : 1; };
+  const steer = engine.steer = { x: 0, y: 0, look: 1 };
+  const setKey = (e, on) => {
+    const c = e.code;
+    if (e.key === 'Shift' || c === 'KeyS' || c === 'ArrowDown') keys.brake = on; else if (c === 'KeyW' || c === 'ArrowUp') keys.push = on;
+    else if (c === 'KeyA' || c === 'ArrowLeft') keys.left = on; else if (c === 'KeyD' || c === 'ArrowRight') keys.right = on;
+    else if (c === 'Space') keys.up = on; else if (c === 'KeyC') keys.down = on; else return;
+    if (on && (c === 'Space' || c.startsWith('Arrow'))) e.preventDefault();
+    engine.throttle = keys.brake ? 0.06 : keys.push ? 2.4 : 1; steer.x = (keys.right ? 1 : 0) - (keys.left ? 1 : 0); steer.y = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
+  };
   window.addEventListener('keydown', (e) => { const tag = e.target && e.target.tagName; if (tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'INPUT' || blocked()) return; setKey(e, true); });
   window.addEventListener('keyup', (e) => setKey(e, false));
-  window.addEventListener('blur', () => { keys.brake = keys.push = false; engine.throttle = 1; });
+  window.addEventListener('blur', () => { keys.brake = keys.push = keys.left = keys.right = keys.up = keys.down = false; engine.throttle = 1; steer.x = steer.y = 0; });
   let wheelAt = 0;
   window.addEventListener('wheel', (e) => { if ((e.target !== view && !locked) || blocked() || e.ctrlKey) return; const now = performance.now(); if (now - wheelAt < 170 || Math.abs(e.deltaY) < 4) return; wheelAt = now; setMode(mode + (e.deltaY > 0 ? 1 : -1)); }, { passive: true });
   window.addEventListener('keydown', (e) => {
@@ -577,7 +586,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const A = engine.cur, live = !!A && !A.def.antechamber && !blocked();
     if (locked && blocked()) { try { document.exitPointerLock(); } catch (e) {} }
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
-    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal · PUSH: wegschleudern · Wischen oder NEIGEN: umschauen' : 'Linksklick: Portal · Rechtsklick: Push · Mausrad oder Q/E: Ziel wählen', 6000); }
+    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal · PUSH: wegschleudern · Wischen oder NEIGEN: umschauen' : 'Linksklick: Portal · Rechtsklick: Push · WASD: fliegen · Mausrad: Ziel', 6000); }
     cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready));
     if (lostAt) return;
     if (engine.stats) { engine.stats.gunLevel = level; engine.stats.gunFps = Math.round(fpsE); }   // for the debug panel (?debug=1)
