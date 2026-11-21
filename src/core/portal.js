@@ -248,6 +248,42 @@ VIEW_FRAG.flock = FLOCK_GLSL + /* glsl */`
     gl_FragColor=flockPix(p,R,rs,cut,a);
   }`;
 
+// VORTEX: the portal gun's opening (the engine's shoot()). Never picked for a world's own exit. A living, ragged disc of
+// plasma wound into three spiral arms around a bright core; the next world clears from the middle outward and, over the
+// last metres, the ragged edge settles on the true circle, so the crossing is the plain window like every other look's.
+const VORTEX_GLSL = /* glsl */`
+  float vortexNear(){ return smoothstep(.25,.95,uNear)*smoothstep(0.,1.,uReveal); }
+  float vortexCut(vec2 p){ vec2 dn=p/max(length(p),1e-5); float ang=atan(p.y,p.x);
+    float wob=fbm(dn*2.4+uSeed*7.+vec2(uTime*.55,-uTime*.4))*.15+.022*sin(ang*7.+uTime*3.1)+.014*sin(ang*13.-uTime*4.3);
+    return mix(.8+wob, 1., vortexNear()); }
+`;
+VIEW_FRAG.vortex = VORTEX_GLSL + /* glsl */`
+  void main(){
+    vec2 p=vLocal; float R=min(uHalf.x,uHalf.y); float r=length(p)/R, ang=atan(p.y,p.x);
+    float rev=smoothstep(0.,1.,uReveal), near=vortexNear();
+    float cut=vortexCut(p);
+    if(r>cut) discard;
+    float e=r/cut;
+    vec3 mid=uColor, deep=uColor*uColor*.1+vec3(.004,.012,.006), hot=mix(uColor, vec3(1.,1.,.75), .38);
+    float tw=ang+3.4*log(r+.07)-uTime*1.7;                       // a logarithmic spiral, turning
+    float arms=.5+.5*cos(3.*tw);
+    float n=fbm(vec2(cos(tw),sin(tw))*1.7+vec2(r*5.-uTime*.9, uSeed*9.));
+    float n2=fbm(vec2(cos(tw*2.),sin(tw*2.))*2.6+vec2(r*9.+uTime*.45, 3.1));
+    float plasma=pow(arms,1.7)*.7+.7*n*n+.4*pow(n2,3.);
+    vec3 veil=mix(deep, mid*.8, smoothstep(.16,.8,plasma)); veil=mix(veil, hot*1.25, smoothstep(.95,1.45,plasma));
+    veil*=.5+.75*e*e;
+    veil+=hot*(exp(-r*r*46.)*1.1+exp(-r*r*7.)*.16)*(1.-rev);              // the bright eye
+    if(uVeil.a>.5) veil=uVeil.rgb;
+    float win=mix(-.08+.56*rev, 1.35, near);                     // the cleared middle, to past the rim at the crossing
+    float w=(1.-smoothstep(win-.24, win, r+.1*(n-.5)*(1.-near)))*rev;
+    float a=.5*(1.-near)*r*(1.+.25*sin(uTime*.9));               // what is seen through it is wound a little, less and less
+    float cs=cos(a), sn=sin(a); vec2 q=vec2(cs*p.x-sn*p.y, sn*p.x+cs*p.y);
+    vec3 col=mix(veil, nextAt(q), w);
+    col+=hot*exp(-pow((r-win+.12)/.06,2.))*.3*rev*(1.-near);     // the lip of the clearing
+    col+=hot*pow(e,12.)*1.1*rimLeft()+mid*pow(e,3.)*.2*rimLeft();
+    gl_FragColor=vec4(col,1.);
+  }`;
+
 const HALO_HEAD = /* glsl */`precision highp float;
   uniform float uTime, uGlow, uReveal, uNear, uSeed, uHaloSize; uniform vec3 uColor; varying vec2 vLocal;
   ${NOISE_GLSL}${SDF_GLSL}
@@ -313,6 +349,20 @@ HALO_FRAG.corona = /* glsl */`
     col*=1.-.55*uNear;                                            // the fire thins as the streamers lengthen
     vec2 e=abs(vLocal)/uHaloSize; col*=1.-smoothstep(.72,1.,max(e.x,e.y));
     gl_FragColor=vec4(col*uGlow, 1.);
+  }`;
+
+HALO_FRAG.vortex = VORTEX_GLSL + /* glsl */`
+  void main(){
+    vec2 p=vLocal; float R=min(uHalf.x,uHalf.y); float r=length(p)/R;
+    float cut=vortexCut(p), x=r-cut; if(x<-.02) discard;
+    x=max(x,0.);
+    vec2 dn=p/max(length(p),1e-5); float near=vortexNear();
+    vec3 hot=mix(uColor, vec3(1.,1.,.75), .38);
+    float rim=exp(-x*x*1700.)*1.5, soft=exp(-x*8.)*.42, far=exp(-x*2.3)*.06;
+    float lick=pow(fbm(dn*7.+vec2(uTime*1.3, x*11.-uTime*3.6)+uSeed*5.),3.)*exp(-x*4.5)*3.;   // tongues of light thrown off the edge
+    vec3 col=uColor*(rim+soft+far+lick)+hot*exp(-x*x*5200.)*.7;
+    col*=(1.-.65*near)*smoothstep(0.,.5,uHaloSize/R-r);
+    gl_FragColor=vec4(col*uGlow,1.);
   }`;
 
 // drawn with the view's vertex shader and header (it needs tNext), premultiplied instead of additive
@@ -398,8 +448,8 @@ export class Portal {
     const color = new THREE.Color(spec.color ?? '#9fd0ff');
     const shapeId = shape === 'circle' ? 0 : shape === 'rect' ? 1 : 2;
     const bare = spec.frame === 0 || spec.frame === false;
-    let style = !bare && PORTAL_STYLES.includes(spec.style) ? spec.style : 'ring';
-    if (shape !== 'circle') style = style === 'corona' ? 'iris' : style === 'lens' ? 'film' : style;
+    let style = !bare && (PORTAL_STYLES.includes(spec.style) || spec.style === 'vortex') ? spec.style : 'ring';
+    if (shape !== 'circle') style = style === 'corona' || style === 'vortex' ? 'iris' : style === 'lens' ? 'film' : style;
     const ring = style === 'ring', flock = style === 'flock', hasHalo = spec.halo !== false && !bare;
     const tNext = { value: null };
     this.style = style;

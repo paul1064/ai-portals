@@ -1,4 +1,8 @@
-# Portals
+# Portals, with a portal gun
+
+> **This is a modified copy, not the original.** It is based on [emollick/ai-portals](https://github.com/emollick/ai-portals) by Ethan Mollick (release s8f, 471 worlds, the tree of November 9, 2026), which is licensed [CC BY-NC-SA 4.0](LICENSE). This copy adds a hand-held portal gun, mouse look and a brake; everything else, including every world, is the original work. The changes were made on November 21, 2026 and are listed under [What this copy changes](#what-this-copy-changes). They are shared under the same license, for non-commercial use only. The original author has not reviewed or endorsed this copy, and the live site linked below is the original, without the gun.
+
+The rest of this page is the original's README, apart from the two sections about the gun.
 
 An endless, hands-off flight through 471 generated 3D worlds in a browser. Each world ends in a portal that opens on the next one, and nothing is steered: it flies itself. Live at [portals-endless-worlds.netlify.app](https://portals-endless-worlds.netlify.app) (press S for sound).
 
@@ -31,6 +35,18 @@ npm run preview
 ```
 
 The result is in `dist`, plain static files that any web host can serve, and the preview is at http://localhost:8001. Every script the project wrote is minified with esbuild, and the build adds the pieces that exist only on a deployed site: a small page for each world and journey so that shared links show a preview, a plain page that lists every world with its description, the gallery's record of which worlds are new, and the host's settings file. Each release has a short name, and this one is s8f. Run as `npm run build -- --stamp s8f`, this tree came out identical to the live site, file for file and byte for byte, on November 9, 2026. The site may have grown since.
+
+## Portal gun (added in this copy)
+
+This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself is `shoot()` in `src/core/engine.js`, the green opening is the `vortex` look in `src/core/portal.js`). Open the page with `?gun=0` to fly without it.
+
+| Input | What it does |
+|---|---|
+| Left click | Open a portal where the crosshair points; the flight turns into it |
+| Mouse wheel, Q / E, right click | Turn the dial: Zufall, Irdisch, Fremd, Bizarr, Favorit, Zurück |
+| 1 to 6 | The dial's positions by number |
+| First click | Takes the mouse: from then on it looks round, as in a first-person game (Esc gives it back) |
+| Shift / W | Brake to a hover / push on |
 
 ## Controls
 
@@ -100,9 +116,21 @@ Ethan Mollick described the idea in a paragraph in October 2026 and left the bui
 
 The comments in the code are the agents' notes to themselves and to each other, left as they were apart from a few short passages edited for this repository: lines that quoted or pointed at Ethan's messages, a few notes about the agents' own machines and working folders, and the first lines of three files that the release tooling writes. They have a dialect: the lead agent is "the owner" or "the site's owner," the teams are "crews," and a team's own head is its "lead" or "designer." So a line such as "the owner's ruling of 14 Oct" records one agent's note to another. Hundreds of comments also name screenshots, briefs, reviews and tools that aren't here, because this repository holds the site's code and leaves out the project's working files: `tools` keeps only the build script, edited for this repository, and a small local server written for it.
 
+## What this copy changes
+
+Changed against the original tree (commit `210133f`):
+
+- `src/gun/portal-gun.js` (new): the gun's model, its display and dial, the bolt, the sounds, mouse look, brake and push.
+- `src/core/engine.js`: `shoot()`, `canShoot()`, `requeue()` and the ray test behind them; a hidden portal made with each world for the shot; the viewer's look and throttle; a hook (`chooser`) that lets the dial pick the next world.
+- `src/core/portal.js`: one more portal look, `vortex`, used only for shot portals.
+- `src/main.js`: two lines that switch the gun on (`?gun=0` switches it off).
+- `README.md`: the notice at the top and the two sections about the gun.
+
+Nothing else was touched. Like the original, the additions were written by an AI agent (Claude) at a person's direction.
+
 ## License and credits
 
-This repository is under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International license](LICENSE) (CC BY-NC-SA 4.0): you can share it and build on it for non-commercial purposes, as long as you give credit and keep the same license. Some pieces keep terms of their own. [three.js](https://threejs.org) and a number of short functions are MIT-licensed, and [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) lists the ones the agents traced as they worked.
+The original and this copy's additions alike: this repository is under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International license](LICENSE) (CC BY-NC-SA 4.0): you can share it and build on it for non-commercial purposes, as long as you give credit and keep the same license. Some pieces keep terms of their own. [three.js](https://threejs.org) and a number of short functions are MIT-licensed, and [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) lists the ones the agents traced as they worked.
 
 A check made just before this repository was published found more borrowed functions than that file lists. The main ones: the water caustics in the shared water and plant code and in four worlds follow a Shadertoy shader by Dave Hoskins, which builds on a GLSL Sandbox effect by joltz0r. A three-line hash used in many worlds comes from Martijn Steinrucken's shader tutorials. Two noise routines follow scene shaders by Inigo Quilez, and a grid hash comes from a Stack Overflow answer. As far as the check could establish, the Shadertoy shaders among these were published under Creative Commons Attribution-NonCommercial-ShareAlike 3.0, which is why this repository carries that license in its current version. The Stack Overflow answer is share-alike without the non-commercial part (CC BY-SA 3.0), and the GLSL Sandbox effect states no terms. All of them remain their authors' work. On two points this paragraph differs from the notices file, which was written earlier: that file names no author for the three-line hash, and it lists one of the two noise routines as MIT. This paragraph is the later reading.
 

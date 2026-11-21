@@ -17,6 +17,7 @@ const _r = new THREE.Vector3(), _up = new THREE.Vector3(), _m = new THREE.Matrix
 const _Gi = new THREE.Matrix4(), _C = new THREE.Matrix4();
 const _qs = new THREE.Quaternion(), _M = new THREE.Matrix4(), _e = new THREE.Euler(), _v4 = new THREE.Vector4(), _poi = new THREE.Vector3();
 const Y = new THREE.Vector3(0, 1, 0);
+const _lookQ = new THREE.Quaternion(), _lookE = new THREE.Euler();
 // The steady camera's turn: no faster than STEADY_TURN (radians a second) whatever a world's gaze asks, until the gaze
 // has run more than STEADY_LAG ahead of it (so a hairpin cannot leave it looking backwards for long).
 const STEADY_TURN = 30 * Math.PI / 180, STEADY_LAG = 60 * Math.PI / 180, _qp = new THREE.Quaternion();
@@ -279,6 +280,11 @@ export class Engine {
       try { if (W.feedRT) this.renderer.initRenderTarget(W.feedRT); this.renderer.initRenderTarget(this.portalRT); this.renderer.setRenderTarget(null); } catch (e) { /* made on first use instead */ }
     }
     W.portal.setTexture((W.feedRT || this.portalRT).texture);
+    // the portal gun's opening (shoot()): made with the world and kept hidden, so its shaders are compiled and warmed with the rest
+    if (this.opts.shots && !def.antechamber) {
+      const sp = W.shotPortal = new Portal({ shape: 'circle', radius: clamp(Math.min(W.portal.hx, W.portal.hy) * 0.85, 0.4, 9), color: '#6dff3b', glow: 1.15, style: 'vortex', seed: (seed % 9973) / 99.73 });
+      sp.place(W.exit); sp.group.visible = false; sp.setTexture(this.portalRT.texture); W.scene.add(sp.group);
+    }
     W.revealDist = W.portalSpec.revealDistance ?? Math.min(W.path.length * 0.5, 320);
     // portal.drawWithin (metres, optional): the exit is not drawn at all while more than this much of the route is left to
     // fly (a far opening against a graded sky reads as a disc); it reads the route's distance left, never the lens or a clock.
@@ -499,6 +505,7 @@ export class Engine {
   }
   _queueNext(def) {
     // a shared tour's worlds come first, in their order (opts.tour); then the world after this one in a made series; then the picker chooses
+    if (!def && this.chooser) { try { def = this.chooser() || null; } catch (e) { console.warn('chooser', e); } }   // the portal gun's dial (src/gun)
     def = def || tourNext(this) || seriesNext(this) || this._pick();
     this._complete(def);
     const n = (this.visits[def.id] = (this.visits[def.id] || 0) + 1);
@@ -670,7 +677,7 @@ export class Engine {
     this._trash.push({ W: A, at: performance.now() + 700 });
     this.events.world(B, this.count);
     this.perf.mark('swap', performance.now() - ts);
-    if (!this.opts.single) setTimeout(() => this._queueNext(), 1200);
+    if (!this.opts.single) setTimeout(() => { if (!this.next) this._queueNext(); }, 1200);   // (the gun's dial may have asked for a world meanwhile)
   }
 
   // Renders the next world into the portal texture. Returns false when the portal is off screen.
@@ -843,6 +850,7 @@ export class Engine {
         // portal is not reached before they have met. It only binds where the next world was ready late, close to the portal.
         if (this.blend < 0.98) target = Math.min(target, Math.max(remaining, 0.5) * 0.72 / (1 - this.blend));
       }
+      if (this.throttle != null && !A.def.antechamber) { this._thr = (this._thr ?? 1) + (this.throttle - (this._thr ?? 1)) * (1 - Math.exp(-dt * 5)); target *= this._thr; }   // the viewer brakes or pushes (src/gun)
       this.speed += (target - this.speed) * (1 - Math.exp(-dt * (this.arrived < ARRIVE_SPEED && target > this.speed ? 0.45 + 0.95 * smoothstep(0, ARRIVE_SPEED, this.arrived) : 1.4)));
       A.dist += this.speed * dt;
       if (B && A.dist >= L - 0.45) { this._swap(); return this.frame(raw, dt); }
@@ -850,15 +858,20 @@ export class Engine {
     }
 
     const cam = this.camera, u = clamp(A.dist / L, 0, 1), remaining = L - A.dist;
+    // after a shot (shoot()) the route is the short one to the shot portal: the world goes on being told the place on its own route
+    const uw = A.shot ? clamp(A.shot.u0 + A.dist / A.shot.L0, 0, 1) : u;
     const calmTo = this.settings.camera === 'steady' || this.settings.calmOnly ? 1 : 0;   // a calm journey always flies with the steady camera
     this.calm = frozen ? calmTo : this.calm + clamp(calmTo - this.calm, -raw * 0.7, raw * 0.7);
     this._pose(A, A.dist, cam.position, _q);
     if (!this.camInit || frozen) { this.camQuat.copy(_q); this.camInit = true; }
     else { this.arrived += dt; this._turn(this.camQuat, _q, dt); }
     cam.quaternion.copy(this.camQuat);
+    // the viewer may look round (the portal gun, src/gun): a turn and a tilt of the head laid over the flight gaze
+    if (this.look && (this.look.yaw || this.look.pitch)) cam.quaternion.multiply(_lookQ.setFromEuler(_lookE.set(this.look.pitch, this.look.yaw, 0, 'YXZ')));
 
     // a feed world shows the next world itself, so its opening is open as soon as there is a next world
-    const revealT = B ? (A.feed ? 1 : 1 - smoothstep(A.revealDist * 0.6, A.revealDist, remaining)) : 0;
+    let revealT = B ? (A.feed ? 1 : 1 - smoothstep(A.revealDist * 0.6, A.revealDist, remaining)) : 0;
+    if (A.shot && A.shot.t < A.shot.delay + 0.2) revealT = 0;   // a shot portal opens on its swirl first
     // the world's own grade, exposure and field of view give way to the next world's over this many metres (portal.blendDistance)
     // where either world's post is flat (no tone curve), a long blend mixes a tone curve in or out and shows as wrong colours
     // for the last fifth of the flight (dark inks go black): such a pair blends over the last 25 m unless the world says otherwise
@@ -922,12 +935,14 @@ export class Engine {
     // nought is how the still page asks for a settled picture, and much code answers it by letting every eased value jump
     // to its target: on a pause that showed as wheels, smoke, flocks and lights hopping in the first paused frame.)
     const stand = this.settings.paused && !frozen;
-    if (!(stand && A._ran)) { A._ran = true; try { A.world.update?.(dt, A.time, cam, u); } catch (e) { if (!A._err) { A._err = 1; console.error(e); this.events.status({ error: A.def.id + ' update: ' + e.message }); } } }
+    if (!(stand && A._ran)) { A._ran = true; try { A.world.update?.(dt, A.time, cam, uw); } catch (e) { if (!A._err) { A._err = 1; console.error(e); this.events.status({ error: A.def.id + ' update: ' + e.message }); } } }
     if (A.feed) A.portal.group.visible = remaining < 3 || A.world.portal.show !== false;   // the last metres are the crossing's
     else if (A.drawWithin != null) { A.portal.group.visible = remaining <= A.drawWithin; if (A.drawIn) A.portal.setGrow(0.04 + 0.96 * smoothstep(0, A.drawIn, A.drawWithin - remaining)); }
+    if (A.shot) { const sh = A.shot, k = (sh.t - sh.delay) / 0.6; sh.t += dt; A.portal.group.visible = k > 0;
+      if (k > 0) { const x = Math.min(k, 1) - 1; A.portal.setGrow(k >= 1 ? 1 : Math.max(0.03, 1 + 2.4 * x * x * x + 1.4 * x * x)); } }   // opens with a small overshoot
     A.portal.setTime(this.time); A.portal.setReveal(this.reveal); A.portal.setNear?.(1 - smoothstep(4, 30, remaining));
-    this.extras.update(dt, A, B, cam, u, remaining, this.speed, stand);
-    this.style.update(dt, A, u, frozen);
+    this.extras.update(dt, A, B, cam, uw, remaining, this.speed, stand);
+    this.style.update(dt, A, uw, frozen);
 
     this.renderer.info.reset();
     // Every shader program should exist before the frame that needs it (see _prepare). Programs the loader made
@@ -1005,6 +1020,72 @@ export class Engine {
     }
     this._resize(true);
     this.events.quality(this.tier, this.qualitySetting);
+  }
+  // ---------- the portal gun (src/gun/portal-gun.js) ----------
+  // The viewer may open a portal of their own: shoot(x, y) puts one where the ray through that point of the picture (-1..1)
+  // ends, a few seconds of flight away or just short of the first solid thing in the way, and the flight leaves the world's
+  // route for a short curve into it. Everything after that is the engine's usual crossing: the world behind it is the one
+  // that was waiting. Returns { point, delay, dist } (delay: seconds until the opening shows, the bolt's flight) or null.
+  canShoot() {
+    const A = this.cur;
+    return !!A && !this.lost && !!this.opts.shots && !A.def.antechamber && !this.opts.freeze && !this.settings.paused && !!(A.shotPortal || A.shot) && A.path.length - A.dist > (A.shot ? A.portal.boundR * 1.2 : 3);
+  }
+  shoot(nx, ny, color) {
+    if (!this.canShoot()) return null;
+    const A = this.cur, cam = this.camera, L = A.path.length, was = A.shot;
+    const dir = new THREE.Vector3(nx, ny, 0.5).unproject(cam).sub(cam.position).normalize();
+    if (this.look) { this.camQuat.copy(cam.quaternion); this.look.yaw = this.look.pitch = 0; }   // the flight takes over the way the viewer was looking
+    const v0 = was ? was.v : L / A.duration, P = was ? A.portal : A.shotPortal, r = P.hx;
+    let D = clamp(Math.max(this.speed, v0) * 4.2, r * 3.5, r * 14), surface = false;
+    const hit = this._shotHit(cam.position, dir, r * 1.3, D + r);
+    if (hit != null) { D = Math.max(hit - r * 0.3, r * 1.8); surface = true; }
+    const P0 = cam.position.clone(), T0 = A.path.tangentAtDist(A.dist, new THREE.Vector3()), P1 = P0.clone().addScaledVector(dir, D);
+    const path = core.makePath([P0, P0.clone().addScaledVector(T0, D * 0.16).addScaledVector(dir, D * 0.06), P1.clone().addScaledVector(dir, -D * 0.38), P1], { samples: 64 });
+    const u0 = was ? clamp(was.u0 + A.dist / was.L0, 0, 1) : clamp(A.dist / L, 0, 1), L0 = was ? was.L0 : L;
+    if (!was) { const old = A.portal; old.group.removeFromParent(); old.dispose(); A.portal = P; A.shotPortal = null; }
+    if (color) P._shared.uColor.value.set(color);
+    A.portalSpec = { shape: 'circle', radius: r, style: 'vortex', lens: 0.7 };
+    A.path = path; A.dist = 0; A.duration = path.length / (v0 * 1.15); A.pace = null; A.pois = [];
+    A.cam.ahead = clamp(path.length * 0.3, r, 40);
+    A.exit = path.frameAt(1, undefined, true); A.exitInv = A.exit.clone().invert();
+    P.place(A.exit); P.setGrow(0.03); P.group.visible = false;
+    A.feed = false; A.full = true; A.goFull = false; A.drawWithin = null; A.drawIn = 0; A.revealDist = 1e9;
+    this.reveal = 0; this.boost = 0;
+    const delay = clamp(D / 160, 0.12, 0.32);
+    A.shot = { t: 0, delay, u0, L0, v: v0 };
+    return { point: P1, delay, dist: D, surface, radius: r };
+  }
+  // the first solid thing along a ray, as a distance, or null. A few milliseconds at the most: what is not reached in time is flown through.
+  _shotHit(origin, dir, near, far) {
+    const A = this.cur, rc = this._rc || (this._rc = new THREE.Raycaster()), hits = [], t0 = performance.now(), skip = [A.portal.group, A.shotPortal && A.shotPortal.group];
+    rc.set(origin, dir); rc.near = near; rc.far = far; rc.camera = this.camera;
+    let best = null;
+    const walk = (o) => {
+      if (!o.visible || skip.includes(o) || performance.now() - t0 > 24) return;
+      if (o.isMesh && !o.isSkinnedMesh && o.geometry) {
+        const m = Array.isArray(o.material) ? o.material[0] : o.material, g = o.geometry;
+        const tris = (g.index ? g.index.count : g.attributes?.position?.count || 0) / 3;
+        const solid = m && m.visible !== false && m.depthWrite !== false && m.blending === THREE.NormalBlending && !(m.transparent && m.opacity < 0.6) && m.side !== THREE.BackSide;
+        if (solid && tris > 0 && tris < 300000 && !(o.isInstancedMesh && o.count * tris > 400000)) {
+          hits.length = 0; try { o.raycast(rc, hits); } catch (e) { /* a mesh that cannot be asked is flown through */ }
+          for (const h of hits) if (h.distance >= near && (best == null || h.distance < best)) best = h.distance;
+          if (best != null) rc.far = best;
+        }
+      }
+      for (const c of o.children) walk(c);
+    };
+    try { walk(A.scene); } catch (e) { /* no hit */ }
+    return best;
+  }
+  // The world waiting behind the portal is let go and another is asked for (the gun's dial was turned: this.chooser answers).
+  // Not in the last metres before a portal, where the crossing is already under way.
+  requeue() {
+    const A = this.cur, n = this.next;
+    if (!A || this.opts.single || (n && n.ready && A.path.length - A.dist < 12)) return false;
+    this.next = null; if (n && n.ready) this._dispose(n);
+    if (n) { this.recent.pop(); this.lastId = A.def.id; }
+    this._queueNext();
+    return true;
   }
   // hurry to the next portal (the viewer still never steers)
   skip() { if (this.next && this.next.ready) this.boost = 1; }
