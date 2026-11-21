@@ -54,11 +54,12 @@ This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself 
 | Input | What it does |
 |---|---|
 | Left click | Open a portal where the crosshair points; the flight turns into it |
-| Mouse wheel, Q / E, right click | Turn the dial: Zufall, Irdisch, Fremd, Bizarr, Favorit, Zurück |
+| Right click | The push: a white hole where the crosshair points hurls you back and up, to a portal at the end of the throw |
+| Mouse wheel, Q / E | Turn the dial: Zufall, Irdisch, Fremd, Bizarr, Favorit, Zurück |
 | 1 to 6 | The dial's positions by number |
 | First click | Takes the mouse: from then on it looks round, as in a first-person game (Esc gives it back) |
 | Shift / W | Brake to a hover / push on |
-| Touch screen | Tap to shoot where you tap, drag to look round; buttons at the lower left turn the dial, brake, and (NEIGEN) let you look round by turning the phone itself |
+| Touch screen | Tap to shoot where you tap, drag to look round; buttons at the lower left turn the dial, brake, (NEIGEN) let you look round by turning the phone itself, and fire the push |
 
 The gun is loud by default: a shock ring and sparks where a portal opens, a shake, streaks of light and a wider lens on the way in, and quick fire. `?flash=0` gives the quiet gun, and the Gentle setting (G) keeps the shake and the lens out.
 

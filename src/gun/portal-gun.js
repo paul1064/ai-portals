@@ -1,5 +1,6 @@
 // The portal gun: a hand-held rift projector drawn over the flight, and the controls that go with it.
 //   left click     open a portal where the crosshair points; the flight turns into it
+//   right click    the push: a white hole where the crosshair points hurls you back and up, to a portal at the end of the throw
 //   wheel, Q / E   turn the dial: which kind of world waits behind the next portal
 //   1 .. 6         the dial's positions by number
 //   first click    takes the mouse (Esc gives it back): from then on the mouse looks round, as in a first-person game
@@ -53,6 +54,8 @@ body.gun-touch #gun-pad { display: flex; }
 #gun-pad button { all: unset; box-sizing: border-box; min-width: 92px; height: 54px; padding: 0 14px; border-radius: 27px; border: 1.5px solid var(--gun, #6dff3b); background: rgba(6, 10, 8, .5); color: #fff; font: 700 13px/1 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; letter-spacing: .14em; text-align: center; text-shadow: 0 0 8px var(--gun, #6dff3b); box-shadow: 0 0 14px -4px var(--gun, #6dff3b); touch-action: none; -webkit-tap-highlight-color: transparent; }
 #gun-pad button small { display: block; margin-bottom: 5px; font-size: 9px; font-weight: 600; letter-spacing: .22em; opacity: .7; }
 #gun-pad button.down { background: var(--gun, #6dff3b); color: #04120a; text-shadow: none; }
+#gun-pad #gun-b-push { border-color: #fff; box-shadow: 0 0 16px -3px #fff; text-shadow: 0 0 8px #fff; }
+#gun-pad #gun-b-push.down { background: #fff; }
 @media (max-height: 480px) { #gun-pad { bottom: calc(74px + env(safe-area-inset-bottom, 0px)); flex-direction: row; } }
 `;
 
@@ -66,7 +69,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const stamp = document.createElement('div'); stamp.id = 'gun-stamp';
   const flash = document.createElement('div'); flash.id = 'gun-flash';
   const pad = document.createElement('div'); pad.id = 'gun-pad';
-  pad.innerHTML = '<button id="gun-b-mode" aria-label="Ziel wählen"><small>ZIEL</small><span></span></button><button id="gun-b-brake" aria-label="Bremsen (halten)"><small>HALTEN</small>BREMSE</button><button id="gun-b-tilt" aria-label="Umschauen durch Drehen des Handys" aria-pressed="false"><small>HANDY</small>NEIGEN</button>';
+  pad.innerHTML = '<button id="gun-b-mode" aria-label="Ziel wählen"><small>ZIEL</small><span></span></button><button id="gun-b-brake" aria-label="Bremsen (halten)"><small>HALTEN</small>BREMSE</button><button id="gun-b-tilt" aria-label="Umschauen durch Drehen des Handys" aria-pressed="false"><small>HANDY</small>NEIGEN</button><button id="gun-b-push" aria-label="Push: ein weißes Loch schleudert dich weg"><small>WEISSES LOCH</small>PUSH</button>';
   document.body.append(flash, cross, stamp, pad); document.body.classList.add('gun');
 
   // INLINE: no canvas and no context of the gun's own. The engine calls draw() at the end of each of its frames (engine.overlay)
@@ -310,13 +313,22 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const lineGeo = new THREE.BufferGeometry(); lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
   const streaks = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ color: MODES[0].color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }));
   streaks.frustumCulled = false; streaks.renderOrder = 8; streaks.visible = false; cam.add(streaks);
-  const tinted = [ring.material.color, sparks.material.color, streaks.material.color, glow.emissive, fluidMat.uniforms.uColor.value, tipGlow.material.color, vialGlow.material.color, vialLight.color, muzzleLight.color, bolt.material.color, burst.material.color, ...trail.map((t) => t.material.color)];
+  // the push's white hole: a blinding core, a halo in the dial's colour, three rings thrown off one after another, and matter
+  // flying out of it (the portal's sparks wind in; these go the other way)
+  const holeCore = sprite(scene, 1, 0); holeCore.material.color.set(0xffffff);
+  const holeHalo = sprite(scene, 1, 0);
+  const holeRings = [0, 1, 2].map(() => { const r = sprite(scene, 1, 0); r.material.map = ringTex; r.material.color.set(0xffffff); return r; });
+  const NE = 80, ejPos = new Float32Array(NE * 3), ejSeed = Array.from({ length: NE }, () => [Math.random() * Math.PI * 2, Math.random(), 0.6 + Math.random() * 0.9, (Math.random() - 0.5) * 0.9]);
+  const ejGeo = new THREE.BufferGeometry(); ejGeo.setAttribute('position', new THREE.BufferAttribute(ejPos, 3));
+  const ejecta = new THREE.Points(ejGeo, new THREE.PointsMaterial({ map: dot, color: 0xffffff, size: 0.1, sizeAttenuation: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }));
+  ejecta.frustumCulled = false; ejecta.renderOrder = 9; ejecta.visible = false; scene.add(ejecta);
+  const tinted = [holeHalo.material.color, ring.material.color, sparks.material.color, streaks.material.color, glow.emissive, fluidMat.uniforms.uColor.value, tipGlow.material.color, vialGlow.material.color, vialLight.color, muzzleLight.color, bolt.material.color, burst.material.color, ...trail.map((t) => t.material.color)];
 
   // ---------- state ----------
   let mode = 0; try { const m = Number(localStorage.getItem('portals.gun.mode')); if (m >= 0 && m < MODES.length) mode = Math.floor(m); } catch (e) {}
   const colNow = new THREE.Color(MODES[mode].color), colTo = new THREE.Color(MODES[mode].color);
   const worldsById = new Map(engine.registry.map((d) => [d.id, d])), trailIds = [];
-  let shake = 0, warp = 0, arrived = 0, rift = null, ringT = 9;
+  let shake = 0, warp = 0, arrived = 0, rift = null, ringT = 9, blast = null;
   // HOW MUCH THE GUN MAY COST. Three levels: 2 the whole show; 1 a coarser picture and half the sparks and streaks; 0 a coarse
   // picture drawn every other frame with no sparks or streaks. A phone starts low (0 where the engine guessed 'low'), a desktop
   // at 2. The frame rate decides from there: under 40 a second for a few seconds takes a level away; a steady 56 gives one
@@ -364,6 +376,13 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const env = (a, t, peak, len) => { const g = a.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + len); g.connect(a.destination); return g; };
   const click = () => { const a = audio(); if (!a) return; const t = a.currentTime, o = a.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(1900, t); o.frequency.exponentialRampToValueAtTime(700, t + 0.04); o.connect(env(a, t, 0.05, 0.06)); o.start(t); o.stop(t + 0.08); };
   const dry = () => { const a = audio(); if (!a) return; const t = a.currentTime, o = a.createOscillator(); o.type = 'triangle'; o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(90, t + 0.12); o.connect(env(a, t, 0.12, 0.16)); o.start(t); o.stop(t + 0.2); };
+  const boom = () => {   // the push: a deep drop, a crack of noise sweeping up, and a ring that falls away
+    const a = audio(); if (!a) return; const t = a.currentTime;
+    const s1 = a.createOscillator(); s1.type = 'sine'; s1.frequency.setValueAtTime(120, t); s1.frequency.exponentialRampToValueAtTime(26, t + 0.7); s1.connect(env(a, t, 0.7, 0.9)); s1.start(t); s1.stop(t + 1);
+    const n = a.createBufferSource(), b = a.createBuffer(1, a.sampleRate * 0.5, a.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    n.buffer = b; const hp = a.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.setValueAtTime(300, t); hp.frequency.exponentialRampToValueAtTime(6000, t + 0.35); hp.Q.value = 0.8; n.connect(hp); hp.connect(env(a, t, 0.32, 0.5)); n.start(t);
+    for (const [fr, det] of [[880, 0], [1318, 7], [1760, -6]]) { const o = a.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(fr, t + 0.05); o.frequency.exponentialRampToValueAtTime(fr * 0.35, t + 1.3); o.detune.value = det; o.connect(env(a, t + 0.05, 0.05, 1.3)); o.start(t + 0.05); o.stop(t + 1.4); }
+  };
   const bang = (delay) => {
     const a = audio(); if (!a) return; const t = a.currentTime;
     const o = a.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(1500, t); o.frequency.exponentialRampToValueAtTime(95, t + 0.34);
@@ -406,18 +425,19 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   // ---------- firing ----------
   const blocked = () => { const ab = $('about'); return document.body.classList.contains('atlas-open') || (!!ab && !ab.hidden) || !$('veil').classList.contains('gone'); };   // (the About stays in the page once opened, hidden: only an open one counts)
   const _v = new THREE.Vector3(), _w = new THREE.Vector3();
-  function fire(cx, cy) {
+  function fire(cx, cy, push) {
     if (blocked() || raise < 0.6) return;
     const A = engine.cur;
     if (!A || A.def.antechamber) { say('KALIBRIERE', 1200); dry(); return; }
     if (engine.settings.paused) { say('PAUSE', 1000); dry(); return; }
     if (charge < 1) { dry(); return; }
-    const res = engine.shoot((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1, MODES[mode].color);
+    const res = engine.shoot((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1, MODES[mode].color, !!push);
     if (!res) { say('ZU NAH', 1200); dry(); return; }
     charge = 0; recoilV += FLASH ? 8 : 5.2; heat = 1; sloshV += 9; lastShotWorld = A; rift = null; if (FLASH) shake = Math.max(shake, 0.45);
-    shot = { t: 0, delay: res.delay, point: res.point, radius: res.radius, landed: false, from: body.localToWorld(_v.copy(MUZZLE)).clone(), hist: [] };
+    // (a push: the bolt goes to where the white hole is struck, a short way off; the portal, at the far end of the throw, opens by itself)
+    shot = { t: 0, delay: res.push ? 0.09 : res.delay, point: res.push ? res.origin : res.point, exit: res.point, radius: res.radius, push: res.push, landed: false, from: body.localToWorld(_v.copy(MUZZLE)).clone(), hist: [] };
     cross.classList.add('kick'); requestAnimationFrame(() => requestAnimationFrame(() => cross.classList.remove('kick')));
-    bang(res.delay);
+    if (res.push) { boom(); say('PUSH', 900); recoilV += 5; } else bang(res.delay);
   }
   const canLock = !!view.requestPointerLock;
   // A finger: a short tap shoots where it lands, a drag turns the view with it (the picture follows the finger). The first
@@ -427,7 +447,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   if (matchMedia('(pointer: coarse)').matches) touchOn();
   view.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'mouse') { touchOn(); fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, at: performance.now(), moved: false }); try { view.setPointerCapture(e.pointerId); } catch (err) {} return; }
-    if (e.button === 2) { if (!blocked()) setMode(mode + 1); return; }
+    if (e.button === 2) { if (locked) fire(window.innerWidth / 2, window.innerHeight / 2, true); else fire(e.clientX, e.clientY, true); return; }
     if (e.button !== 0) return;
     if (locked) return fire(window.innerWidth / 2, window.innerHeight / 2);
     if (canLock && !blocked()) { try { const p = view.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* the click fires instead */ } }
@@ -457,6 +477,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   // NEIGEN: the phone's own orientation turns the view. The sensor's three angles are made into the way the back of the phone
   // points (the arithmetic every such control uses); what counts is how far that has turned, left-right and up-down, from
   // where it pointed when the button was pressed or a portal was last shot. Dragging still works on top of it.
+  const bPush = pad.querySelector('#gun-b-push');
+  bPush.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); bPush.classList.add('down'); setTimeout(() => bPush.classList.remove('down'), 160); fire(window.innerWidth / 2, window.innerHeight * 0.42, true); });
   const bTilt = pad.querySelector('#gun-b-tilt'), tilt = { on: false, ref: null, now: null, got: 0, heard: null };
   const _te = new THREE.Euler(), _tq = new THREE.Quaternion(), _tq1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)), _tz = new THREE.Vector3(0, 0, 1), _tq0 = new THREE.Quaternion(), _tf = new THREE.Vector3();
   const onTilt = (e) => {
@@ -529,7 +551,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const meta = $('title-meta'); if (meta) meta.textContent += ' · Dimension ' + code;
     stamp.innerHTML = 'DIMENSION <b>' + code + '</b>'; stamp.classList.add('show'); clearTimeout(stampT); stampT = setTimeout(() => stamp.classList.remove('show'), 3200);
     if (lastShotWorld && lastShotWorld.shot) { flash.classList.toggle('big', FLASH); flash.classList.add('on'); setTimeout(() => flash.classList.remove('on'), FLASH ? 110 : 70); if (FLASH) { arrived = 0.5; shake = Math.max(shake, 0.7); } }
-    lastShotWorld = null; shot = null; rift = null;
+    lastShotWorld = null; shot = null; rift = null; blast = null;
     // on 'ZURÜCK' the world just left is now the one before: nothing to do, the trail has it. On a tier with nothing left the dial says so.
   };
 
@@ -555,7 +577,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const A = engine.cur, live = !!A && !A.def.antechamber && !blocked();
     if (locked && blocked()) { try { document.exitPointerLock(); } catch (e) {} }
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
-    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal schießen · Wischen oder NEIGEN: umschauen · ZIEL: Welt wählen' : 'Linksklick: Portal schießen · Mausrad oder Q/E: Ziel wählen', 6000); }
+    if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal · PUSH: wegschleudern · Wischen oder NEIGEN: umschauen' : 'Linksklick: Portal · Rechtsklick: Push · Mausrad oder Q/E: Ziel wählen', 6000); }
     cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready));
     if (lostAt) return;
     if (engine.stats) { engine.stats.gunLevel = level; engine.stats.gunFps = Math.round(fpsE); }   // for the debug panel (?debug=1)
@@ -617,7 +639,10 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
         shot.hist.forEach((p, i) => { const s = trail[i], f = 1 - i / trail.length; s.position.copy(p); s.scale.setScalar(size * 2.2 * f); s.material.opacity = 0.55 * f * f; });
       } else {
         bolt.material.opacity = 0; boltCore.material.opacity = 0;
-        if (!shot.landed) { shot.landed = true; rift = { point: shot.point, radius: shot.radius }; if (FLASH) { shake = 1; ringT = 0; } }
+        if (!shot.landed) {
+          shot.landed = true; rift = { point: shot.exit, radius: shot.radius }; if (FLASH) { shake = 1; ringT = shot.push ? 9 : 0; }
+          if (shot.push) { blast = { point: shot.point, radius: shot.radius, t: 0 }; shake = 1.5; flash.classList.add('big'); flash.classList.add('on'); setTimeout(() => flash.classList.remove('on'), 90); }
+        }
         const b = (shot.t - shot.delay) / 0.45;
         if (b < 1) { burst.position.copy(_v); burst.scale.setScalar((0.3 + 1.5 * Math.sqrt(b)) * shot.radius * 2.2); burst.material.opacity = (1 - b) * (1 - b) * 0.9; }
         else { burst.material.opacity = 0; if (shot.t > shot.delay + 1.2) shot = null; }
@@ -631,7 +656,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       look.sy = sa * (Math.sin(t * 67) + 0.6 * Math.sin(t * 113 + 1)); look.sp = sa * (Math.sin(t * 59 + 2) + 0.6 * Math.sin(t * 97));
       // the way in: over the second half of the flight to a shot portal the lens widens and light streaks past; it lingers a moment after the crossing
       const sh = A && A.shot, left = sh ? (A.path.length - A.dist) / Math.max(1, A.path.length) : 1; arrived = Math.max(0, arrived - dt);
-      const to = arrived > 0 ? 1 : sh && sh.t > sh.delay ? THREE.MathUtils.clamp((0.7 - left) / 0.45, 0, 1) : 0;
+      const to = arrived > 0 || (sh && sh.push && sh.t < 1.1) ? 1 : sh && sh.t > sh.delay ? THREE.MathUtils.clamp((0.7 - left) / 0.45, 0, 1) : 0;   // (hurled by a push: streaks at once)
       warp += (to - warp) * (1 - Math.exp(-dt * (to > warp ? 3 : 5))); engine.fovKick = engine.gentle || engine.mobile ? 0 : 0.16 * warp * warp;   // (a wider lens is more to draw: not on a phone)
       streaks.visible = warp > 0.02 && level > 0;
       if (streaks.visible) {
@@ -653,7 +678,26 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
         }
       }
     }
-    if (INLINE || level > 0 || shot || (frameNo++ & 1) === 0) { drawDisplay(now); draw(); }   // (level 0: every other frame, but every frame while a bolt flies)
+    // the white hole of a push, for a little over two seconds, where it stands in this camera's picture
+    holeCore.material.opacity = holeHalo.material.opacity = 0; for (const r of holeRings) r.material.opacity = 0; ejecta.visible = false;
+    if (blast) {
+      blast.t += dt; const bt = blast.t, R = blast.radius;
+      if (bt > 2.4) blast = null;
+      else {
+        _v.copy(blast.point).project(ec); const depth = _w.copy(blast.point).sub(ec.position).length();
+        if (_v.z < 1 && depth > 0.5 && !(level === 0 && !INLINE)) {
+          _v.set(_v.x, _v.y, 0.5).unproject(cam).sub(cam.position).normalize().multiplyScalar(depth);
+          const life = bt < 1.5 ? 1 : Math.max(0, 1 - (bt - 1.5) / 0.9), born = Math.min(1, bt / 0.12), flick = 1 + 0.12 * Math.sin(t * 43) + 0.08 * Math.sin(t * 71);
+          holeCore.position.copy(_v); holeCore.scale.setScalar(R * 2.6 * born * flick); holeCore.material.opacity = life;
+          holeHalo.position.copy(_v); holeHalo.scale.setScalar(R * 7 * born * (1 + 0.3 * bt)); holeHalo.material.opacity = 0.55 * life;
+          holeRings.forEach((r, i) => { const b = (bt - i * 0.2) / 0.7; if (b > 0 && b < 1) { r.position.copy(_v); r.scale.setScalar((0.8 + 8 * Math.sqrt(b)) * R * 2); r.material.opacity = (1 - b) * (1 - b); } });
+          ejecta.visible = true; ejecta.material.size = R * 0.3; ejecta.material.opacity = 0.9 * life;
+          for (let i = 0; i < NE; i++) { const q = ejSeed[i], f = (bt * 1.3 * q[2] + q[1]) % 1, rr = R * (0.4 + 6.5 * f); ejPos[i * 3] = _v.x + Math.cos(q[0]) * rr; ejPos[i * 3 + 1] = _v.y + Math.sin(q[0]) * rr; ejPos[i * 3 + 2] = _v.z + R * q[3] * 2 * f; }
+          ejGeo.attributes.position.needsUpdate = true;
+        }
+      }
+    }
+    if (INLINE || level > 0 || shot || blast || (frameNo++ & 1) === 0) { drawDisplay(now); draw(); }   // (level 0: every other frame, but every frame while a bolt flies)
   }
   if (INLINE) {
     // the gun's materials are made ready before the first frame that shows it, as the engine does for its worlds

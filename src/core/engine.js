@@ -1038,38 +1038,44 @@ export class Engine {
     const A = this.cur;
     return !!A && !this.lost && !!this.opts.shots && !A.def.antechamber && !this.opts.freeze && !this.settings.paused && !!(A.shotPortal || A.shot) && A.path.length - A.dist > (A.shot ? A.portal.boundR * 1.2 : 3);
   }
-  shoot(nx, ny, color) {
+  // push: the other shot. A white hole is struck where the viewer aims and hurls them the other way: the route runs back and
+  // up from where they are, fast, to a portal at its far end, and the view turns round in flight to find it. The answer then
+  // also names where the white hole stands (origin).
+  shoot(nx, ny, color, push) {
     if (!this.canShoot()) return null;
     const A = this.cur, cam = this.camera, L = A.path.length, was = A.shot;
     const dir = new THREE.Vector3(nx, ny, 0.5).unproject(cam).sub(cam.position).normalize();
     if (this.look) { this.camQuat.copy(cam.quaternion); this.look.yaw = this.look.pitch = 0; if (this.look.absorbed) this.look.absorbed(); }   // the flight takes over the way the viewer was looking
     const v0 = was ? was.v : L / A.duration, P = was ? A.portal : A.shotPortal, r = P.hx;
-    let D = clamp(Math.max(this.speed, v0) * 4.2, r * 3.5, r * 14), surface = false;
-    const hit = this._shotHit(cam.position, dir, r * 1.3, D + r * 8);   // (looked for well past the opening: ground met at a shallow angle a little further on still cuts into it)
+    const aim = push ? dir.clone().negate().addScaledVector(Y, 0.32).normalize() : dir;   // which way the flight goes: at the mark, or flung from it
+    let D = clamp(Math.max(this.speed, v0) * 4.2, r * 3.5, r * 14) * (push ? 1.5 : 1), surface = false;
+    const hit = this._shotHit(cam.position, aim, r * 1.3, D + r * 8);   // (looked for well past the opening: ground met at a shallow angle a little further on still cuts into it)
     const P0 = cam.position.clone(), T0 = A.path.tangentAtDist(A.dist, new THREE.Vector3()), P1 = P0.clone();
     if (hit) {
       // The opening stands square to the shot. On a surface met aslant (the ground, most of all) half of it would lie behind
       // the surface, so it is lifted off along the surface's own normal until its whole rim stands clear.
       surface = hit.dist <= D + r;
-      const along = Math.min(D, Math.max(hit.dist - r * 0.3, r * 0.5)), n = hit.normal; P1.addScaledVector(dir, along);
-      if (n) { const c = Math.abs(n.dot(dir)), need = r * Math.sqrt(Math.max(0, 1 - c * c)) * 1.08 + r * 0.1, have = (hit.dist - along) * c; if (have < need) P1.addScaledVector(n, need - have); }
+      const along = Math.min(D, Math.max(hit.dist - r * 0.3, r * 0.5)), n = hit.normal; P1.addScaledVector(aim, along);
+      if (n) { const c = Math.abs(n.dot(aim)), need = r * Math.sqrt(Math.max(0, 1 - c * c)) * 1.08 + r * 0.1, have = (hit.dist - along) * c; if (have < need) P1.addScaledVector(n, need - have); }
       D = P1.distanceTo(P0);
       if (D < r * 1.8) { P1.sub(P0).setLength(r * 1.8).add(P0); D = r * 1.8; }
-    } else P1.addScaledVector(dir, D);
-    const path = core.makePath([P0, P0.clone().addScaledVector(T0, D * 0.16).addScaledVector(dir, D * 0.06), P1.clone().addScaledVector(dir, -D * 0.38), P1], { samples: 64 });
+    } else P1.addScaledVector(aim, D);
+    const path = core.makePath(push ? [P0, P0.clone().addScaledVector(aim, D * 0.2), P1.clone().addScaledVector(aim, -D * 0.38), P1]
+      : [P0, P0.clone().addScaledVector(T0, D * 0.16).addScaledVector(dir, D * 0.06), P1.clone().addScaledVector(dir, -D * 0.38), P1], { samples: 64 });
     const u0 = was ? clamp(was.u0 + A.dist / was.L0, 0, 1) : clamp(A.dist / L, 0, 1), L0 = was ? was.L0 : L;
     if (!was) { const old = A.portal; old.group.removeFromParent(); old.dispose(); A.portal = P; A.shotPortal = null; }
     if (color) P._shared.uColor.value.set(color);
     A.portalSpec = { shape: 'circle', radius: r, style: 'vortex', lens: 0.7 };
-    A.path = path; A.dist = 0; A.duration = path.length / (v0 * 1.15); A.pace = null; A.pois = [];
+    A.path = path; A.dist = 0; A.duration = path.length / (v0 * (push ? 1.7 : 1.15)); A.pace = null; A.pois = [];
+    if (push) this.speed = Math.max(this.speed, v0) * 3.4;   // the hurl: at once, not eased up to
     A.cam.ahead = clamp(path.length * 0.3, r, 40);
     A.exit = path.frameAt(1, undefined, true); A.exitInv = A.exit.clone().invert();
     P.place(A.exit); P.setGrow(0.03); P.group.visible = false;
     A.feed = false; A.full = true; A.goFull = false; A.drawWithin = null; A.drawIn = 0; A.revealDist = 1e9;
     this.reveal = 0; this.boost = 0;
-    const delay = clamp(D / 160, 0.12, 0.32);
-    A.shot = { t: 0, delay, u0, L0, v: v0 };
-    return { point: P1, delay, dist: D, surface, radius: r };
+    const delay = push ? 0.05 : clamp(D / 160, 0.12, 0.32);
+    A.shot = { t: 0, delay, u0, L0, v: v0, push: !!push };
+    return { point: P1, delay, dist: D, surface, radius: r, push: !!push, origin: push ? P0.clone().addScaledVector(dir, r * 3.2) : null };
   }
   // the first solid thing along a ray, as a distance, or null. A few milliseconds at the most: what is not reached in time is flown through.
   _shotHit(origin, dir, near, far) {
