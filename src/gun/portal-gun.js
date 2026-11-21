@@ -633,20 +633,25 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   // can be reached and none is met by flying straight on. They are drawn by the gun (its own sprites, laid where the place
   // stands in the engine's picture), so nothing of the world hides them: a core behind a hill still shows where to steer.
   const _cs = new THREE.Vector3(), _cu = new THREE.Vector3(), _ct = new THREE.Vector3();
+  // A core looked at is marked: held near the middle of the picture for a moment, by the viewer's own turning, it is the
+  // flight's aim from then on (engine steer.target) until it is caught or passed. The flight's own view turns as it goes,
+  // so without this a core had to be chased across the picture all the way.
+  let lock = null, lockC = null, lockT = 0;
+  const unlock = () => { lock = null; steer.target = null; };
   const spawnCores = (A) => {
     const path = A.path, L = path.length; let n = 0;
-    for (const c of cores) { c.on = false; c.gone = 0; }
+    for (const c of cores) { c.on = false; c.gone = 0; } unlock(); lockC = null;
     for (let i = 0; i < NC; i++) {
       const d = L * (0.16 + 0.62 * (i + 0.2 + 0.6 * Math.random()) / NC), room = engine.steerRoom(A, L - d);
       if (room.lim < 2.5) continue;
       path.tangentAtDist(d, _ct); _cs.crossVectors(_ct, _cu.set(0, 1, 0)); if (_cs.lengthSq() < 1e-4) _cs.set(1, 0, 0); _cs.normalize(); _cu.crossVectors(_cs, _ct).normalize();
       const a = (0.04 + 0.92 * Math.random()) * Math.PI, rho = room.lim * (0.6 + 0.28 * Math.random()), c = cores[n++];
       path.posAtDist(d, c.pos).addScaledVector(_cs, Math.cos(a) * rho).addScaledVector(_cu, Math.sin(a) * rho);
-      c.on = true; c.pick = THREE.MathUtils.clamp(room.wide * 0.18, 1, 4.2);
+      c.on = true; c.rho = rho; c.pick = THREE.MathUtils.clamp(room.wide * 0.18, 1, 4.2);
     }
   };
   const caught = (c) => {
-    c.on = false; c.gone = 0.4; total++; bank++; saveUp();
+    c.on = false; c.gone = 0.4; total++; bank++; saveUp(); if (c === lock) unlock();
     if (!shopTip && bank >= 3) { shopTip = true; setTimeout(() => toast(document.body.classList.contains('gun-touch') ? 'Kerne ausgeben: oben rechts auf die Kerne tippen' : 'Kerne ausgeben: Taste B \u00F6ffnet die Werkstatt', 5200), 1400); }
     const full = cells >= maxCells(); setCells(cells + 1); chime(); say(full ? 'KERN +1' : 'PUSH GELADEN', 1000); charge = 1; heat = Math.max(heat, 0.55); sloshV += 5;
     chip.classList.add('got'); clearTimeout(chipT); chipT = setTimeout(() => chip.classList.remove('got'), 260);
@@ -802,12 +807,14 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     }
     // the cores: set out when a world is new, caught when flown into (the last metres they come to meet the viewer), drawn where they stand
     if (live && A !== coreWorld) { coreWorld = A; spawnCores(A); if (!coreTipAt) coreTipAt = now + 9000; }
-    if (coreTipAt > 0 && now > coreTipAt && live) { coreTipAt = -1; toast('Goldene Kerne neben der Route: hinfliegen und einsammeln, jeder l\u00E4dt einen Push', 5200); }
+    if (coreTipAt > 0 && now > coreTipAt && live) { coreTipAt = -1; toast('Goldene Kerne neben der Route: kurz anschauen, dann fliegst du von selbst hin', 5200); }
+    let cand = null, candA = 9; _cs.set(0, 0, -1).applyQuaternion(ec.quaternion); _cu.set(0, 0, -1).applyQuaternion(engine.camQuat); const turnedBy = Math.hypot(Math.atan2(Math.sin(look.yaw + (look.gy || 0)), Math.cos(look.yaw + (look.gy || 0))), look.pitch + (look.gp || 0));   // how far the viewer has turned the view themselves
     for (const c of cores) {
       c.halo.material.opacity = c.heart.material.opacity = c.rg.material.opacity = 0;
       if (!c.on && c.gone <= 0) continue;
       if (!A || A !== coreWorld) { c.on = false; c.gone = 0; continue; }
       let dist = _w.copy(c.pos).sub(ec.position).length();
+      if (c.on && !lock && turnedBy > 0.02 && dist > 1 && dist < 320) { const aV = Math.acos(Math.min(1, _w.dot(_cs) / dist)), aG = Math.acos(Math.min(1, _w.dot(_cu) / dist)); if (aV < Math.min(0.22, Math.max(0.1, c.pick * 3 / dist)) && aV < aG - 0.015 && aV < candA) { cand = c; candA = aV; } }   // (within some six degrees of the middle of the picture, and nearer to it than the flight's own view had it: the viewer turned toward it)
       if (c.on && dt > 0 && !engine.settings.paused) { if (dist < c.pick * 2.1) { c.pos.lerp(ec.position, 1 - Math.exp(-dt * 6)); dist = _w.copy(c.pos).sub(ec.position).length(); } if (dist < c.pick) caught(c); }
       if (c.gone > 0 && !c.on) c.gone -= dt;
       if (level === 0 && !INLINE) continue;
@@ -817,8 +824,12 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       const sz = Math.min(Math.max(c.pick * 0.55 * dd / Math.max(dist, 1e-3), dd * 0.011), dd * 0.05) * (1 + 0.14 * Math.sin(t * 4 + c.ph)) * (1 + 3 * g);
       c.halo.position.copy(_v); c.halo.scale.setScalar(sz * 5.5); c.halo.material.opacity = 0.5 * al;
       c.heart.position.copy(_v); c.heart.scale.setScalar(sz * 1.5); c.heart.material.opacity = al;
-      c.rg.position.copy(_v); c.rg.scale.setScalar(sz * (3 + 0.5 * Math.sin(t * 2.3 + c.ph))); c.rg.material.opacity = 0.75 * al;
+      const lk = c === lock ? 1 : 0; c.rg.material.color.set(lk ? 0xffffff : GOLD);
+      c.rg.position.copy(_v); c.rg.scale.setScalar(sz * (lk ? 4.2 + 0.9 * Math.sin(t * 9) : 3 + 0.5 * Math.sin(t * 2.3 + c.ph))); c.rg.material.opacity = (lk ? 1 : 0.75) * al;
     }
+    if (cand === lockC && cand) lockT += dt; else { lockC = cand; lockT = 0; }
+    if (!lock && lockC && lockT > 0.18 && live) { lock = lockC; steer.target = lock.pos; lockC = null; click(); say('ZIEL ERFASST', 900); }
+    if (lock) { if (!lock.on || !A || A !== coreWorld) unlock(); else { A.path.tangentAtDist(A.dist, _ct); if (_w.copy(lock.pos).sub(ec.position).dot(_ct) < -3) unlock(); } }
     // the white hole of a push, for a little over two seconds, where it stands in this camera's picture
     holeCore.material.opacity = holeHalo.material.opacity = 0; for (const r of holeRings) r.material.opacity = 0; ejecta.visible = false;
     if (blast) {
@@ -846,5 +857,5 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     engine.overlay = () => step(performance.now());
   } else requestAnimationFrame(frame);
 
-  return { setMode, fire, step, cores, get cells() { return cells; }, set cells(v) { setCells(v); }, get total() { return total; }, get bank() { return bank; }, set bank(v) { bank = Math.max(0, v | 0); saveUp(); setCells(cells); }, up, openShop, get over() { return over; }, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
+  return { setMode, fire, step, cores, get cells() { return cells; }, set cells(v) { setCells(v); }, get total() { return total; }, get lock() { return lock; }, get bank() { return bank; }, set bank(v) { bank = Math.max(0, v | 0); saveUp(); setCells(cells); }, up, openShop, get over() { return over; }, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
 }

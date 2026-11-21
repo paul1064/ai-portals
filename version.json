@@ -1,10 +1,10 @@
 {
- "build": "a59883dc89",
+ "build": "34d61d40c2",
  "files": {
   "src/companions/the-drift.js": "92861874d6",
   "src/companions/wandering-lantern.js": "d254acb7fc",
   "src/core/audio.js": "3860b877e2",
-  "src/core/engine.js": "6a6585f22b",
+  "src/core/engine.js": "fd1abf7a68",
   "src/core/extras.js": "45281d8b52",
   "src/core/perf.js": "fd5c6f1ca9",
   "src/core/pick.js": "26b3994c7e",
@@ -17,7 +17,7 @@
   "src/core/style.js": "5c1bceb81b",
   "src/extras.js": "531597d378",
   "src/gun/dim.js": "3fd6a1f164",
-  "src/gun/portal-gun.js": "1878464514",
+  "src/gun/portal-gun.js": "3f5fa9258d",
   "src/kit/core.js": "81ac8f555d",
   "src/kit/fauna/alien.js": "56c6f3f642",
   "src/kit/fauna/birds.js": "3357b660e3",

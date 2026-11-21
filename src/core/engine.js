@@ -1051,7 +1051,11 @@ export class Engine {
     _sf.set(0, 0, -1).applyQuaternion(cam.quaternion); _sg.set(0, 0, -1).applyQuaternion(this.camQuat); _sr.set(1, 0, 0).applyQuaternion(cam.quaternion);
     A.path.tangentAtDist(A.dist, _st);
     const lk = this.look, ty = lk ? lk.yaw + (lk.gy || 0) : 0, turned = lk ? Math.hypot(Math.atan2(Math.sin(ty), Math.cos(ty)), lk.pitch + (lk.gp || 0)) : 0;
-    const w = (st.look ?? 1) * smoothstep(0.02, 0.1, turned), fT = _sf.dot(_st);   // w: how far the view is the viewer's own
+    // A place the gun has marked (steer.target, a core the viewer looked at): the offset closes on it by itself, in step with the
+    // way left to it along the route, so it is met however the flight's own view turns meanwhile. The view then steers nothing.
+    const tg = st.target; let homing = false;
+    if (tg) { _sg.copy(tg).sub(cam.position).sub(off); const along = _sg.dot(_st); if (along > 0.5) { homing = true; if (dt > 0) { _sg.addScaledVector(_st, -along); off.addScaledVector(_sg, Math.min(1, 2 * Math.max(this.speed, 1) * dt / along)); } } }
+    const w = homing ? 0 : (st.look ?? 1) * smoothstep(0.04, 0.14, turned), fT = _sf.dot(_st);   // w: how far the view is the viewer's own
     this._steerFwd = 1 + (clamp(fT, 0, 1) - 1) * Math.min(1, w);
     if (dt > 0) {
       const cruise = (L / A.duration) * this.settings.speed, v = Math.max(this.speed, cruise * 0.5) / Math.max(fT, 0.35);   // (the pace along the route is the forward part of the flight: the whole is that much more)
