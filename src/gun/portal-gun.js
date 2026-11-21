@@ -145,6 +145,49 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   add(prof([[-0.046, -0.152], [-0.102, -0.143], [-0.104, -0.152], [-0.048, -0.162]], 0.04, 0.002), dark);
   { const g = new THREE.TorusGeometry(0.03, 0.0032, 10, 28, Math.PI); g.rotateZ(Math.PI); g.rotateY(Math.PI / 2); add(g, dark, 0, -0.027, -0.014); }
   add(prof([[0.006, -0.026], [0.016, -0.026], [0.02, -0.04], [0.016, -0.052], [0.008, -0.05], [0.012, -0.04]], 0.009, 0.0015), orange, 0, 0, 0.012);
+  // THE HAND: a right hand in a work glove, closed round the grip. It is seen from behind and to the left, so what shows
+  // is the thumb lying along the left flank, the three fingers coming round the front of the grip with their tips on the
+  // left, the forefinger through the guard on the trigger, the web of the hand under the receiver's tail, and the wrist
+  // and sleeve running back out of the picture. All of it is tubes and balls, on the gun's own body so it kicks with it.
+  {
+    const glove = M({ color: 0x14161a, metalness: 0, roughness: 0.74, bumpMap: stipple, bumpScale: 0.6 });
+    const pad = M({ color: 0x2b2f36, metalness: 0, roughness: 0.55 });
+    const cuff = M({ color: 0xe8540f, metalness: 0, roughness: 0.62 });
+    const sleeve = M({ color: 0x15171a, metalness: 0, roughness: 0.9 });
+    const hand = new THREE.Group(); body.add(hand);
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    const ball = (c, r, mat, sx = 1, sy = 1, sz = 1) => { const m = add(new THREE.SphereGeometry(r, 18, 12), mat, c.x, c.y, c.z, hand); m.scale.set(sx, sy, sz); return m; };
+    // a finger: a tube through the points, closed with a ball at each end, a paler pad at the tip
+    const finger = (pts, r, tip = true) => {
+      add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'centripetal'), 28, r, 12), glove, 0, 0, 0, hand);
+      ball(pts[0], r, glove); ball(pts[pts.length - 1], r * 1.02, tip ? pad : glove);
+    };
+    // the grip's own axis (it leans back) and the direction square to it that points to its front
+    const top = V(0, -0.026, 0.048), ax = V(0, -0.976, 0.216), fw = V(0, -0.216, -0.976);
+    const round = (d, r, a0, a1, rx = 0.0275, rf = 0.0385) => {   // round the grip at d metres down it, from angle a0 to a1 (0 right, 90 degrees front, 180 left)
+      const c = top.clone().addScaledVector(ax, d).addScaledVector(fw, -0.004), pts = [];
+      for (let i = 0; i <= 14; i++) { const a = a0 + (a1 - a0) * i / 14; pts.push(c.clone().add(V(Math.cos(a) * rx, 0, 0)).addScaledVector(fw, Math.sin(a) * rf)); }
+      finger(pts, r);
+    };
+    round(0.046, 0.0102, -0.5, 3.75); round(0.0665, 0.0100, -0.5, 3.85); round(0.0865, 0.0092, -0.5, 3.9, 0.0265, 0.0365);
+    // the forefinger: along the right flank, through the guard, its tip on the trigger showing at the left
+    finger([V(0.027, -0.04, 0.05), V(0.0285, -0.037, 0.012), V(0.022, -0.039, -0.02), V(0.008, -0.041, -0.031), V(-0.008, -0.042, -0.027)], 0.0088);
+    // the thumb: from the web forward along the left flank, under the dial
+    finger([V(-0.006, -0.034, 0.1), V(-0.024, -0.037, 0.078), V(-0.0295, -0.036, 0.048), V(-0.0295, -0.033, 0.02)], 0.0108);
+    ball(V(-0.016, -0.04, 0.092), 0.017, glove, 1, 0.95, 1.2);                       // the ball of the thumb
+    // the web under the receiver's tail, the heel of the palm behind the grip, the back of the hand on the right, the knuckles
+    ball(V(0.002, -0.036, 0.103), 0.021, glove, 1.15, 0.8, 1);
+    ball(top.clone().addScaledVector(ax, 0.07).addScaledVector(fw, -0.05).add(V(0.004, 0, 0)), 0.03, glove, 0.82, 1.75, 0.8).rotation.x = 0.22;
+    ball(top.clone().addScaledVector(ax, 0.066).addScaledVector(fw, -0.012).add(V(0.031, 0, 0)), 0.03, glove, 0.5, 1.65, 1.35).rotation.x = 0.22;
+    for (const [d, r] of [[0.046, 0.0125], [0.0665, 0.0122], [0.0865, 0.0112]]) ball(top.clone().addScaledVector(ax, d).addScaledVector(fw, 0.024).add(V(0.03, 0, 0)), r, pad, 1, 1, 1.1);
+    ball(V(0.031, -0.04, 0.046), 0.0125, pad);
+    // wrist, the glove's orange cuff, and the sleeve, back and down out of the picture
+    const w0 = V(0.008, -0.118, 0.118), w1 = V(-0.012, -0.165, 0.2), w2 = V(-0.07, -0.27, 0.56);
+    const limb = (a, b, r0, r1, mat) => { const m = add(new THREE.CylinderGeometry(r1, r0, a.distanceTo(b), 22, 1), mat, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2, hand); m.quaternion.setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize()); return m; };
+    limb(w0, w1, 0.03, 0.033, glove).scale.set(1.12, 1, 0.86); ball(w0, 0.03, glove, 1.12, 1, 0.86);
+    limb(w1.clone().lerp(w0, 0.22), w1, 0.036, 0.037, cuff).scale.set(1.12, 1, 0.9);
+    limb(w1, w2, 0.04, 0.052, sleeve).scale.set(1.1, 1, 0.92);
+  }
   // a milled window in the left flank with the mode-coloured light bar behind it, and the bolts that hold the flank on
   add(prof([[-0.04, -0.012], [0.07, -0.012], [0.076, -0.006], [0.07, 0], [-0.04, 0], [-0.046, -0.006]], 0.0514, 0.0008), dark);
   add(new THREE.BoxGeometry(0.0006, 0.004, 0.1), glow, -0.0259, -0.006, -0.012);
@@ -454,7 +497,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   };
 
   // ---------- frame ----------
-  const BASE = new THREE.Vector3(0.5, -0.118, -0.5), _q = new THREE.Quaternion(), _e = new THREE.Euler();
+  const BASE = new THREE.Vector3(0.5, -0.078, -0.58), _q = new THREE.Quaternion(), _e = new THREE.Euler();
   let last = performance.now(), w = 0, h = 0, cleared = false, t = 0, firstUp = false;
   function frame(now) { requestAnimationFrame(frame); step(now); }
   function step(now) {
