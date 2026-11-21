@@ -1035,8 +1035,10 @@ export class Engine {
     this._resize(true);
     this.events.quality(this.tier, this.qualitySetting);
   }
-  // One step of the steering. The offset drifts toward where the viewer looks (the part of their view that leaves the flight's
-  // own gaze, so the flight looking at a set piece by itself moves nobody) and with the keys (steer.x right, steer.y up). The
+  // One step of the steering. Once the viewer has turned the view themselves (mouse, finger or the phone turned), the flight
+  // goes the way the middle of the picture points: what of that leaves the route's own direction moves the offset, at the
+  // pace of the flight, so a thing held in the middle of the picture is flown into. A view nobody turned moves nobody, however
+  // the flight itself looks about. The keys add to it (steer.x right, steer.y up). The
   // tube is a little over two portal radii wide, narrower on a short route, and closes to half a radius at the portal so
   // the crossing is always inside the opening; downward there is little room, since the route often runs just above the ground.
   steerRoom(A, remaining) {
@@ -1047,12 +1049,14 @@ export class Engine {
     const st = this.steer, off = this.off || (this.off = new THREE.Vector3()), cam = this.camera, L = A.path.length;
     const r = Math.min(A.portal.hx, A.portal.hy) || 7, wide = Math.min(clamp(r * 2.3, 4, 24), L * 0.25);
     _sf.set(0, 0, -1).applyQuaternion(cam.quaternion); _sg.set(0, 0, -1).applyQuaternion(this.camQuat); _sr.set(1, 0, 0).applyQuaternion(cam.quaternion);
-    this._steerFwd = st.look === 0 ? 1 : clamp(_sf.dot(_sg), 0, 1);
+    A.path.tangentAtDist(A.dist, _st);
+    const lk = this.look, ty = lk ? lk.yaw + (lk.gy || 0) : 0, turned = lk ? Math.hypot(Math.atan2(Math.sin(ty), Math.cos(ty)), lk.pitch + (lk.gp || 0)) : 0;
+    const w = (st.look ?? 1) * smoothstep(0.02, 0.1, turned), fT = _sf.dot(_st);   // w: how far the view is the viewer's own
+    this._steerFwd = 1 + (clamp(fT, 0, 1) - 1) * Math.min(1, w);
     if (dt > 0) {
-      A.path.tangentAtDist(A.dist, _st);
-      const cruise = (L / A.duration) * this.settings.speed, v = Math.max(this.speed, cruise * 0.5);
-      _sf.sub(_sg); _sf.addScaledVector(_st, -_sf.dot(_st));               // the view's turn away from the gaze, across the route only
-      off.addScaledVector(_sf, v * dt * (st.look ?? 1));
+      const cruise = (L / A.duration) * this.settings.speed, v = Math.max(this.speed, cruise * 0.5) / Math.max(fT, 0.35);   // (the pace along the route is the forward part of the flight: the whole is that much more)
+      _sf.addScaledVector(_st, -fT);                                        // the part of the view's direction that lies across the route
+      off.addScaledVector(_sf, v * dt * w);
       if (st.x) { _sr.addScaledVector(_st, -_sr.dot(_st)); off.addScaledVector(_sr, st.x * cruise * 0.9 * dt); }
       if (st.y) off.y += st.y * cruise * 0.9 * dt;
     }

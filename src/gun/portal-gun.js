@@ -6,7 +6,7 @@
 //   1 .. 6         the dial's positions by number
 //   first click    takes the mouse (Esc gives it back): from then on the mouse looks round, as in a first-person game
 //   W A S D, arrows  fly: W pushes on, S (or Shift) brakes to a hover, A and D slip sideways; space rises, C sinks
-//   looking         the flight drifts toward where you look, inside a tube round the world's route (engine._steer)
+//   looking         the flight goes where the middle of the picture points, inside a tube round the world's route (engine._steer)
 //   cores           golden energy cores hang beside the route of every world: flown into, each loads one push (three at the most)
 // On a touch screen: tap to shoot where you tap, drag to look round, and buttons at the lower left: the dial, a brake to hold,
 // and NEIGEN, which lets the phone itself be turned to look round (its orientation sensor).
@@ -590,9 +590,9 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       const d = L * (0.16 + 0.62 * (i + 0.2 + 0.6 * Math.random()) / NC), room = engine.steerRoom(A, L - d);
       if (room.lim < 2.5) continue;
       path.tangentAtDist(d, _ct); _cs.crossVectors(_ct, _cu.set(0, 1, 0)); if (_cs.lengthSq() < 1e-4) _cs.set(1, 0, 0); _cs.normalize(); _cu.crossVectors(_cs, _ct).normalize();
-      const a = (0.04 + 0.92 * Math.random()) * Math.PI, rho = room.lim * (0.5 + 0.35 * Math.random()), c = cores[n++];
+      const a = (0.04 + 0.92 * Math.random()) * Math.PI, rho = room.lim * (0.6 + 0.28 * Math.random()), c = cores[n++];
       path.posAtDist(d, c.pos).addScaledVector(_cs, Math.cos(a) * rho).addScaledVector(_cu, Math.sin(a) * rho);
-      c.on = true; c.pick = THREE.MathUtils.clamp(room.wide * 0.13, 1, 3);
+      c.on = true; c.pick = THREE.MathUtils.clamp(room.wide * 0.18, 1, 4.2);
     }
   };
   const caught = (c) => {
@@ -757,7 +757,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       if (!c.on && c.gone <= 0) continue;
       if (!A || A !== coreWorld) { c.on = false; c.gone = 0; continue; }
       let dist = _w.copy(c.pos).sub(ec.position).length();
-      if (c.on && dt > 0 && !engine.settings.paused) { if (dist < c.pick * 1.6) { c.pos.lerp(ec.position, 1 - Math.exp(-dt * 4)); dist = _w.copy(c.pos).sub(ec.position).length(); } if (dist < c.pick) caught(c); }
+      if (c.on && dt > 0 && !engine.settings.paused) { if (dist < c.pick * 2.1) { c.pos.lerp(ec.position, 1 - Math.exp(-dt * 6)); dist = _w.copy(c.pos).sub(ec.position).length(); } if (dist < c.pick) caught(c); }
       if (c.gone > 0 && !c.on) c.gone -= dt;
       if (level === 0 && !INLINE) continue;
       _v.copy(c.pos).project(ec); if (_v.z >= 1 || dist < 0.05) continue;
