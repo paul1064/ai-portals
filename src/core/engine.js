@@ -832,7 +832,8 @@ export class Engine {
     const A = this.cur;
     if (!A || this.lost) return;
     const frozen = !!this.opts.freeze, cross = carried != null;
-    const dt = cross ? carried : frozen ? (this.opts.stepDt ?? 0) : (this.settings.paused ? 0 : Math.min(raw, this.opts.maxDt || 0.05));
+    // (timeScale: the gun's slow motion. The world and the flight run slower by it; a frame carried across a portal is as it was)
+    const dt = cross ? carried : frozen ? (this.opts.stepDt ?? 0) : (this.settings.paused ? 0 : Math.min(raw, this.opts.maxDt || 0.05) * (this.timeScale ?? 1));
     if (!cross) this.time += dt;
     const L = A.path.length, B = this.next && this.next.ready ? this.next : null;
 

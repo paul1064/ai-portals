@@ -477,6 +477,14 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   }
 
   // ---------- firing ----------
+  // SLOW MOTION: for five seconds the world and the flight run at a quarter of their pace (engine.timeScale), the view and the
+  // gun stay as quick as ever: time to aim at a core or to look about. It costs a core.
+  let slowUntil = 0;
+  const slowMo = () => {
+    if (blocked() || performance.now() < slowUntil) return;
+    if (cells < 1) { say('KEIN KERN', 1400); dry(); return; }
+    setCells(cells - 1); slowUntil = performance.now() + 5000; say('ZEITLUPE', 5000); buzz([20, 40, 20]); click();
+  };
   const blocked = () => { const ab = $('about'); return shopOpen || document.body.classList.contains('atlas-open') || (!!ab && !ab.hidden) || !$('veil').classList.contains('gone'); };   // (the About stays in the page once opened, hidden: only an open one counts)
   const _v = new THREE.Vector3(), _w = new THREE.Vector3();
   function fire(cx, cy, push, power = 0) {
@@ -584,6 +592,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const setKey = (e, on) => {
     const c = e.code;
     // X held and let go is the charged shot too (a touchpad's tap cannot be held)
+    if (c === 'KeyZ') { if (on && !e.repeat) slowMo(); return; }   // slow motion: five seconds for one core
     if (c === 'KeyX') { if (on) { if (!e.repeat && !mHold) mHold = performance.now(); } else if (mHold) { const pw = powerOf(mHold); mHold = 0; fire(locked ? window.innerWidth / 2 : (mx + 1) / 2 * window.innerWidth, locked ? window.innerHeight / 2 : (1 - my) / 2 * window.innerHeight, false, pw); } return; }
     if (c === 'KeyS') keys.brake = on; else if (c === 'KeyW') keys.push = on;
     else if (c === 'KeyA') keys.left = on; else if (c === 'KeyD') keys.right = on;
@@ -698,6 +707,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   function step(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
     const gap = prevNow ? now - prevNow : 16.7; prevNow = now;
+    { const want = now < slowUntil ? 0.25 : 1, ts = engine.timeScale ?? 1; engine.timeScale = Math.abs(want - ts) < 0.01 ? want : ts + (want - ts) * Math.min(1, dt * 6); }   // (slow motion eases in and out)
     if (level !== levelOn) { levelOn = level; w = 0; sparkGeo.setDrawRange(0, level === 2 ? NS : NS >> 1); lineGeo.setDrawRange(0, level === 2 ? NL * 2 : (NL >> 1) * 2); }
     const W = window.innerWidth, H = window.innerHeight;
     if (W !== w || H !== h) {
@@ -888,5 +898,5 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     engine.overlay = () => step(performance.now());
   } else requestAnimationFrame(frame);
 
-  return { setMode, fire, step, cores, get cells() { return cells; }, set cells(v) { setCells(v); }, get total() { return total; }, get lock() { return lock; }, get race() { return race; }, startRace, visited, get bank() { return bank; }, set bank(v) { bank = Math.max(0, v | 0); saveUp(); setCells(cells); }, up, openShop, get over() { return over; }, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
+  return { setMode, fire, step, cores, get cells() { return cells; }, set cells(v) { setCells(v); }, get total() { return total; }, get lock() { return lock; }, slowMo, get slow() { return performance.now() < slowUntil; }, get race() { return race; }, startRace, visited, get bank() { return bank; }, set bank(v) { bank = Math.max(0, v | 0); saveUp(); setCells(cells); }, up, openShop, get over() { return over; }, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
 }
