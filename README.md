@@ -2,6 +2,8 @@
 
 > **This is a modified copy, not the original.** It is based on [emollick/ai-portals](https://github.com/emollick/ai-portals) by Ethan Mollick (release s8f, 471 worlds, the tree of November 9, 2026), which is licensed [CC BY-NC-SA 4.0](LICENSE). This copy adds a hand-held portal gun, mouse look and a brake; everything else, including every world, is the original work. The changes were made on November 21, 2026 and are listed under [What this copy changes](#what-this-copy-changes). They are shared under the same license, for non-commercial use only. The original author has not reviewed or endorsed this copy, and the live site linked below is the original, without the gun.
 
+**Play this copy in the browser: [paul1064.github.io/ai-portals](https://paul1064.github.io/ai-portals/)** (a desktop browser with a mouse; click once to take the mouse, press S for sound).
+
 The rest of this page is the original's README, apart from the two sections about the gun.
 
 An endless, hands-off flight through 471 generated 3D worlds in a browser. Each world ends in a portal that opens on the next one, and nothing is steered: it flies itself. Live at [portals-endless-worlds.netlify.app](https://portals-endless-worlds.netlify.app) (press S for sound).
@@ -125,6 +127,7 @@ Changed against the original tree (commit `210133f`):
 - `src/core/portal.js`: one more portal look, `vortex`, used only for shot portals.
 - `src/main.js`: two lines that switch the gun on (`?gun=0` switches it off).
 - `README.md`: the notice at the top and the two sections about the gun.
+- `.nojekyll` (new, empty): tells GitHub Pages to serve the files as they are.
 
 Nothing else was touched. Like the original, the additions were written by an AI agent (Claude) at a person's direction.
 
