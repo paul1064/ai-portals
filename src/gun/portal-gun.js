@@ -5,6 +5,8 @@
 //   first click    takes the mouse (Esc gives it back): from then on the mouse looks round, as in a first-person game
 //   Shift / W      brake to a hover / push on
 // On a touch screen: tap to shoot where you tap, drag to look round, and two buttons at the lower left (the dial; a brake to hold).
+// On a phone the gun is drawn straight into the picture by the engine's own renderer, after the frame is finished (INLINE below):
+// a second graphics context cost phones their smooth flight. On a desktop:
 // The gun is drawn by a small renderer of its own on a transparent canvas above the picture, so no world's fog, grade or
 // near plane touches it; the world's key light is borrowed so that it still sits in the scene. The portal itself, the
 // curve of the flight into it and the crossing are the engine's (core/engine.js shoot(), core/portal.js 'vortex').
@@ -66,10 +68,23 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   pad.innerHTML = '<button id="gun-b-mode" aria-label="Ziel wählen"><small>ZIEL</small><span></span></button><button id="gun-b-brake" aria-label="Bremsen (halten)"><small>HALTEN</small>BREMSE</button>';
   document.body.append(flash, cross, stamp, pad); document.body.classList.add('gun');
 
+  // INLINE: no canvas and no context of the gun's own. The engine calls draw() at the end of each of its frames (engine.overlay)
+  // and the gun's scene goes over the finished picture: one context, one layer on the screen, nothing to blend.
+  const INLINE = engine.opts.gunInline != null ? !!engine.opts.gunInline : !!engine.mobile;
   let renderer;
-  try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: !engine.mobile, powerPreference: 'high-performance' }); }   // (a phone draws the gun without antialiasing and at one pixel per point: its second context must cost little)
-  catch (e) { console.warn('portal gun: no second graphics context', e); canvas.remove(); cross.remove(); document.body.classList.remove('gun'); return null; }
-  renderer.setClearColor(0x000000, 0); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  if (INLINE) { renderer = engine.renderer; canvas.remove(); }
+  else {
+    try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' }); }
+    catch (e) { console.warn('portal gun: no second graphics context', e); canvas.remove(); cross.remove(); document.body.classList.remove('gun'); return null; }
+    renderer.setClearColor(0x000000, 0); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  }
+  // (the engine's renderer writes linear colour and leaves tone mapping to its last pass: for the gun it is lent ours, and given back)
+  const draw = () => {
+    if (!INLINE) { renderer.render(scene, cam); return; }
+    const r = renderer, tm = r.toneMapping, te = r.toneMappingExposure, ac = r.autoClear;
+    r.setRenderTarget(null); r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05; r.autoClear = false;
+    try { r.clearDepth(); r.render(scene, cam); } finally { r.toneMapping = tm; r.toneMappingExposure = te; r.autoClear = ac; }
+  };
   const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(40, 1, 0.02, 400);
   scene.add(cam);
 
@@ -262,7 +277,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   // picture drawn every other frame with no sparks or streaks. A phone starts low (0 where the engine guessed 'low'), a desktop
   // at 2. The frame rate decides from there: under 40 a second for a few seconds takes a level away; a steady 56 gives one
   // back, once, and never to a phone the engine put on 'low'.
-  let level = engine.mobile ? (engine.tier === 'low' ? 0 : 1) : 2, levelOn = -1, fpsE = 60, lowT = 0, highT = 0, noRaise = 0, drops = 0, frameNo = 0, prevNow = 0;
+  // (INLINE there is no picture of the gun's own to coarsen: the levels then only thin the sparks and streaks, and a phone starts a level higher)
+  let level = INLINE ? (engine.mobile && engine.tier === 'low' ? 1 : 2) : engine.mobile ? (engine.tier === 'low' ? 0 : 1) : 2, levelOn = -1, fpsE = 60, lowT = 0, highT = 0, noRaise = 0, drops = 0, frameNo = 0, prevNow = 0;
   const pixelRatio = () => { const d = window.devicePixelRatio || 1; return level === 2 ? Math.min(d, engine.mobile ? 1.25 : 1.5) : level === 1 ? Math.min(d, engine.mobile ? 0.85 : 1) : Math.min(d, 0.9); };   // (level 0 draws a third of the screen, so it can afford to be less coarse)
   let charge = 1, raise = 0, recoil = 0, recoilV = 0, heat = 0, slosh = 0, sloshV = 0, knobAng = 0, mx = 0.25, my = -0.1, aimX = 0, aimY = 0, hover = false, note = '', noteUntil = 0, shot = null, lastShotWorld = null, dispKey = '', swayX = 0, swayY = 0;
   const lastQ = new THREE.Quaternion(); let lastQSet = false;
@@ -450,9 +466,9 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       // On level 0 the canvas is only the corner the gun stands in, not the whole screen: a see-through layer over the whole
       // picture is itself a cost on a phone, every frame, whether or not anything is drawn into it. The camera is told
       // which part of the full picture that corner is, so the gun stands exactly where it did.
-      w = W; h = H; const part = level === 0, cw = part ? Math.round(W * 0.66) : W, ch = part ? Math.round(H * 0.5) : H;
+      w = W; h = H; const part = level === 0 && !INLINE, cw = part ? Math.round(W * 0.66) : W, ch = part ? Math.round(H * 0.5) : H;
       Object.assign(canvas.style, { left: (W - cw) + 'px', top: (H - ch) + 'px', right: 'auto', bottom: 'auto', width: cw + 'px', height: ch + 'px' });
-      renderer.setPixelRatio(pixelRatio()); renderer.setSize(cw, ch, false); cam.aspect = W / H;
+      if (!INLINE) { renderer.setPixelRatio(pixelRatio()); renderer.setSize(cw, ch, false); } cam.aspect = W / H;
       if (part) cam.setViewOffset(W, H, W - cw, H - ch, cw, ch); else cam.clearViewOffset();
       cam.updateProjectionMatrix();
     }
@@ -469,7 +485,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       if (lowT > 2.5 && level > 0) { level--; lowT = 0; drops++; noRaise = drops > 1 ? Infinity : now + 45000; }
       else if (highT > 6 && level < 2 && now > noRaise && !(engine.mobile && engine.tier === 'low')) { level++; highT = 0; }
     }
-    if (raise < 0.004 && !shot) { if (!cleared) { renderer.clear(); cleared = true; } return; }
+    if (raise < 0.004 && !shot) { if (!cleared && !INLINE) renderer.clear(); cleared = true; return; }
     cleared = false;
 
     // charge, heat, colour
@@ -523,7 +539,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
         else { burst.material.opacity = 0; if (shot.t > shot.delay + 1.2) shot = null; }
       }
     } else { bolt.material.opacity = 0; boltCore.material.opacity = 0; burst.material.opacity = 0; }
-    if (level === 0) { bolt.material.opacity = boltCore.material.opacity = burst.material.opacity = 0; for (const s of trail) s.material.opacity = 0; }   // (the bolt would leave the corner the canvas covers)
+    if (level === 0 && !INLINE) { bolt.material.opacity = boltCore.material.opacity = burst.material.opacity = 0; for (const s of trail) s.material.opacity = 0; }   // (the bolt would leave the corner the canvas covers)
 
     if (FLASH) {
       // the shake (a turn of the head the engine lays over the view), dying away; none on a gentle flight
@@ -541,7 +557,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       }
       // the shock ring and the sparks, where the portal stands in this camera's picture
       sparks.visible = false; ring.material.opacity = 0;
-      if (rift && A && level > 0) {
+      if (rift && A && (level > 0 || INLINE)) {
         _v.copy(rift.point).project(ec); const depth = _w.copy(rift.point).sub(ec.position).length();
         if (_v.z < 1 && depth > 0.5) {
           _v.set(_v.x, _v.y, 0.5).unproject(cam).sub(cam.position).normalize().multiplyScalar(depth);
@@ -553,9 +569,13 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
         }
       }
     }
-    if (level > 0 || shot || (frameNo++ & 1) === 0) { drawDisplay(now); renderer.render(scene, cam); }   // (level 0: every other frame, but every frame while a bolt flies)
+    if (INLINE || level > 0 || shot || (frameNo++ & 1) === 0) { drawDisplay(now); draw(); }   // (level 0: every other frame, but every frame while a bolt flies)
   }
-  requestAnimationFrame(frame);
+  if (INLINE) {
+    // the gun's materials are made ready before the first frame that shows it, as the engine does for its worlds
+    try { const r = renderer, tm = r.toneMapping; r.setRenderTarget(null); r.toneMapping = THREE.ACESFilmicToneMapping; try { r.compile(scene, cam); } finally { r.toneMapping = tm; } } catch (e) { console.warn('portal gun', e); }
+    engine.overlay = () => step(performance.now());
+  } else requestAnimationFrame(frame);
 
   return { setMode, fire, step, get mode() { return MODES[mode].id; }, get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); }, modes: MODES };
 }

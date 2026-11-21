@@ -795,9 +795,14 @@ export class Engine {
     rt.scissor.set(x0, y0, x1 - x0, y1 - y0);
     if (V) V.rect.set(x0 / W, y0 / H, (x1 - x0) / W, (y1 - y0) / H);
     const first = !B.drawn, n0 = first ? this.renderer.info.programs.length : 0, t0 = first ? performance.now() : 0;
+    // The next world's own exit holds this very buffer as its picture. Where that exit can be seen from its entry, drawing it
+    // into the buffer it reads from is refused by the graphics card (a feedback loop: an error every frame and no exit in the
+    // picture). For this one drawing it is handed the blank texture; shut as it is, it shows its veil either way.
+    const exitTex = B.portal.viewMat.uniforms.tNext, kept = exitTex.value; if (kept === rt.texture) exitTex.value = this._blank;
     this.renderer.setRenderTarget(rt);
     this.renderer.render(B.scene, pc);
     this.renderer.setRenderTarget(null);
+    exitTex.value = kept;
     if (first) {   // programs made here were missed by _prepare: each one is a stall on a slow shader compiler
       B.drawn = true; if (B.loadRec) B.loadRec.late = this.renderer.info.programs.length - n0;
       this.perf.mark('first-draw:' + B.def.id, performance.now() - t0);
@@ -976,6 +981,9 @@ export class Engine {
       buildMs: Math.round(A.buildMs), jsMs: Math.round(A.jsMs), geometries: info.memory.geometries, textures: info.memory.textures, programs: info.programs?.length,
       pr: Math.round(this.pr * 100) / 100, quality: this.tier, fps: Math.round(this.fps), size: Math.floor(this.w * this.pr) + 'x' + Math.floor(this.h * this.pr), aa: this.samples, next: B?.def.id, lens: Math.round((this.lensNow ?? 1) * 100) / 100, view: A.view.used ? +A.view._live : undefined };
 
+    // the portal gun on a phone (src/gun): drawn here, over the finished frame, by this same renderer. A second graphics
+    // context for it, as a desktop has, cost a phone its smooth flight.
+    if (this.overlay) { try { this.overlay(); } catch (e) { if (!this._overlayErr) { this._overlayErr = 1; console.error(e); } } }
     if (this._trash.length) this._clear();
     if (this.adaptive && dt > 0 && !this.boost && !A.def.antechamber) this._adapt(raw);   // frames while hurrying to the portal say nothing about the usual load, nor do the antechamber's (near free to draw, with world 1 being built between them)
   }
