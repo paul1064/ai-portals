@@ -5,7 +5,8 @@
 //   wheel, Q / E   turn the dial: which kind of world waits behind the next portal
 //   1 .. 6         the dial's positions by number
 //   first click    takes the mouse (Esc gives it back): from then on the mouse looks round, as in a first-person game
-//   W A S D, arrows  fly: W pushes on, S (or Shift) brakes to a hover, A and D slip sideways; space rises, C sinks
+//   W A S D         fly: W pushes on, S brakes to a hover, A and D slip sideways; space rises, left Shift or C sinks
+//   arrow keys      turn the view, as the mouse does (for a touchpad, which is dead while keys are held)
 //   looking         the flight goes where the middle of the picture points, inside a tube round the world's route (engine._steer)
 //   cores           golden energy cores hang beside the route of every world: flown into, each loads one push (three at the most)
 //   the log         every dimension reached for the first time is counted (the stamp says how many of all) and brings a core
@@ -502,7 +503,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const touchOn = () => { if (!document.body.classList.contains('gun-touch')) document.body.classList.add('gun-touch'); };
   if (matchMedia('(pointer: coarse)').matches) touchOn();
   view.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'mouse') { touchOn(); fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, at: performance.now(), moved: false }); try { view.setPointerCapture(e.pointerId); } catch (err) {} return; }
+    if (e.pointerType !== 'mouse') { touchOn(); keyLook = false; fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, at: performance.now(), moved: false }); try { view.setPointerCapture(e.pointerId); } catch (err) {} return; }
     if (e.button === 2) { if (locked) fire(window.innerWidth / 2, window.innerHeight / 2, true); else fire(e.clientX, e.clientY, true); return; }
     if (e.button !== 0) return;
     if (locked) { mHold = performance.now(); return; }
@@ -572,27 +573,29 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   view.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('pointerlockchange', () => {
     locked = document.pointerLockElement === view; document.body.classList.toggle('gun-look', locked); mHold = 0;
-    if (locked) { cross.style.transform = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px)`; if (!lockTip) { lockTip = true; toast('Du fliegst, wohin du schaust · WASD, Leertaste, C: steuern · Esc gibt die Maus frei', 6500); } }
+    if (locked) { cross.style.transform = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px)`; if (!lockTip) { lockTip = true; toast('Du fliegst, wohin das Fadenkreuz zeigt · WASD, Leertaste, Shift: steuern · Pfeiltasten: umschauen · Esc gibt die Maus frei', 7500); } }
   });
   document.addEventListener('mousemove', (e) => {
     if (!locked) return;
     const k = 0.0021 * Math.min(1, engine.camera.fov / 60);
     look.yaw = (look.yaw - e.movementX * k) % (Math.PI * 2); look.pitch = THREE.MathUtils.clamp(look.pitch - e.movementY * k, -1.35, 1.35);
   });
-  const steer = engine.steer = { x: 0, y: 0, look: 1 };
+  const steer = engine.steer = { x: 0, y: 0, look: 1 }; let keyLook = false;   // (keyLook: the arrows have turned the view, so it is the viewer's own from then on)
   const setKey = (e, on) => {
     const c = e.code;
     // X held and let go is the charged shot too (a touchpad's tap cannot be held)
     if (c === 'KeyX') { if (on) { if (!e.repeat && !mHold) mHold = performance.now(); } else if (mHold) { const pw = powerOf(mHold); mHold = 0; fire(locked ? window.innerWidth / 2 : (mx + 1) / 2 * window.innerWidth, locked ? window.innerHeight / 2 : (1 - my) / 2 * window.innerHeight, false, pw); } return; }
-    if (e.key === 'Shift' || c === 'KeyS' || c === 'ArrowDown') keys.brake = on; else if (c === 'KeyW' || c === 'ArrowUp') keys.push = on;
-    else if (c === 'KeyA' || c === 'ArrowLeft') keys.left = on; else if (c === 'KeyD' || c === 'ArrowRight') keys.right = on;
-    else if (c === 'Space') keys.up = on; else if (c === 'KeyC') keys.down = on; else return;
+    if (c === 'KeyS') keys.brake = on; else if (c === 'KeyW') keys.push = on;
+    else if (c === 'KeyA') keys.left = on; else if (c === 'KeyD') keys.right = on;
+    else if (c === 'Space') keys.up = on; else if (c === 'KeyC' || c === 'ShiftLeft') keys.down = on;
+    else if (c.startsWith('Arrow')) { keys[c] = on; if (on) keyLook = true; }   // the arrows turn the view
+    else return;
     if (on && (c === 'Space' || c.startsWith('Arrow'))) e.preventDefault();
     engine.throttle = keys.brake ? 0.06 : keys.push ? 2.4 : 1; steer.x = (keys.right ? 1 : 0) - (keys.left ? 1 : 0); steer.y = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
   };
   window.addEventListener('keydown', (e) => { const tag = e.target && e.target.tagName; if (tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'INPUT' || blocked()) return; setKey(e, true); });
   window.addEventListener('keyup', (e) => setKey(e, false));
-  window.addEventListener('blur', () => { mHold = 0; keys.brake = keys.push = keys.left = keys.right = keys.up = keys.down = false; engine.throttle = 1; steer.x = steer.y = 0; });
+  window.addEventListener('blur', () => { mHold = 0; keys.brake = keys.push = keys.left = keys.right = keys.up = keys.down = keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.ArrowDown = false; engine.throttle = 1; steer.x = steer.y = 0; });
   let wheelAt = 0;
   window.addEventListener('wheel', (e) => { if ((e.target !== view && !locked) || blocked() || e.ctrlKey) return; const now = performance.now(); if (now - wheelAt < 170 || Math.abs(e.deltaY) < 4) return; wheelAt = now; setMode(mode + (e.deltaY > 0 ? 1 : -1)); }, { passive: true });
   window.addEventListener('keydown', (e) => {
@@ -660,9 +663,9 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       const d = L * (0.16 + 0.62 * (i + 0.2 + 0.6 * Math.random()) / NC), room = engine.steerRoom(A, L - d);
       if (room.lim < 2.5) continue;
       path.tangentAtDist(d, _ct); _cs.crossVectors(_ct, _cu.set(0, 1, 0)); if (_cs.lengthSq() < 1e-4) _cs.set(1, 0, 0); _cs.normalize(); _cu.crossVectors(_cs, _ct).normalize();
-      const a = (0.04 + 0.92 * Math.random()) * Math.PI, rho = room.lim * (0.6 + 0.28 * Math.random()), c = cores[n++];
+      const a = (0.04 + 0.92 * Math.random()) * Math.PI, rho = room.lim * (0.38 + 0.34 * Math.random()), c = cores[n++];
       path.posAtDist(d, c.pos).addScaledVector(_cs, Math.cos(a) * rho).addScaledVector(_cu, Math.sin(a) * rho);
-      c.on = true; c.rho = rho; c.pick = THREE.MathUtils.clamp(room.wide * 0.18, 1, 4.2);
+      c.on = true; c.rho = rho; c.pick = THREE.MathUtils.clamp(room.wide * 0.1, 1, 4.2);
     }
   };
   const caught = (c) => {
@@ -743,7 +746,9 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     }
     // The view comes back to the flight's own once it is let go: with no finger down (and the mouse not taken, the phone
     // not turned to look) a view left aside would drift the viewer to the wall of the tube and hold them there.
-    if (!locked && !tilt.on && fingers.size === 0 && (look.yaw || look.pitch)) {
+    steer.own = locked || keyLook ? 1 : tilt.on ? 2 : 0;   // whose the view is (engine._ownView)
+    if (live) { const ky = (keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0), kp = (keys.ArrowUp ? 1 : 0) - (keys.ArrowDown ? 1 : 0); if (ky) look.yaw += ky * 1.5 * dt; if (kp) look.pitch = THREE.MathUtils.clamp(look.pitch + kp * 1.1 * dt, -1.35, 1.35); }
+    if (!steer.own && fingers.size === 0 && (look.yaw || look.pitch)) {
       restT += dt;
       if (restT > 0.5) { const kr = Math.exp(-dt * 1.7); let y = Math.atan2(Math.sin(look.yaw), Math.cos(look.yaw)) * kr, pt = look.pitch * kr; look.yaw = Math.abs(y) < 0.002 ? 0 : y; look.pitch = Math.abs(pt) < 0.002 ? 0 : pt; }
     } else restT = 0;
@@ -839,7 +844,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
       if (!c.on && c.gone <= 0) continue;
       if (!A || A !== coreWorld) { c.on = false; c.gone = 0; continue; }
       let dist = _w.copy(c.pos).sub(ec.position).length();
-      if (c.on && !lock && turnedBy > 0.02 && dist > 1 && dist < 320) { const aV = Math.acos(Math.min(1, _w.dot(_cs) / dist)), aG = Math.acos(Math.min(1, _w.dot(_cu) / dist)); if (aV < Math.min(0.22, Math.max(0.1, c.pick * 3 / dist)) && aV < aG - 0.015 && aV < candA) { cand = c; candA = aV; } }   // (within some six degrees of the middle of the picture, and nearer to it than the flight's own view had it: the viewer turned toward it)
+      if (c.on && !lock && steer.own === 1 && dist > 1 && dist < Math.min(250, c.rho / 0.045)) { const aV = Math.acos(Math.min(1, _w.dot(_cs) / dist)); if (aV < Math.max(0.03, c.pick * 1.2 / dist) && aV < candA) { cand = c; candA = aV; } }   // (the view is the viewer's own: the middle of the picture has to be on the core itself)
+      else if (c.on && !lock && turnedBy > 0.02 && dist > 1 && dist < 320) { const aV = Math.acos(Math.min(1, _w.dot(_cs) / dist)), aG = Math.acos(Math.min(1, _w.dot(_cu) / dist)); if (aV < Math.min(0.22, Math.max(0.1, c.pick * 3 / dist)) && aV < aG - 0.015 && aV < candA) { cand = c; candA = aV; } }   // (within some six degrees of the middle of the picture, and nearer to it than the flight's own view had it: the viewer turned toward it)
       if (c.on && dt > 0 && !engine.settings.paused) { if (dist < c.pick * 2.1) { c.pos.lerp(ec.position, 1 - Math.exp(-dt * 6)); dist = _w.copy(c.pos).sub(ec.position).length(); } if (dist < c.pick) caught(c); }
       if (c.gone > 0 && !c.on) c.gone -= dt;
       if (level === 0 && !INLINE) continue;

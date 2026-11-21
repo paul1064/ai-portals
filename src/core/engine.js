@@ -871,7 +871,7 @@ export class Engine {
     this.calm = frozen ? calmTo : this.calm + clamp(calmTo - this.calm, -raw * 0.7, raw * 0.7);
     this._pose(A, A.dist, cam.position, _q);
     if (!this.camInit || frozen) { this.camQuat.copy(_q); this.camInit = true; }
-    else { this.arrived += dt; this._turn(this.camQuat, _q, dt); }
+    else { this.arrived += dt; if (this.steer && this.steer.own && this.look && !A.def.antechamber) this._ownView(A, dt); else { this._ownPath = null; this._turn(this.camQuat, _q, dt); } }
     cam.quaternion.copy(this.camQuat);
     // the viewer may look round (the portal gun, src/gun): a turn and a tilt of the head laid over the flight gaze
     if (this.look) { const lk = this.look, ly = lk.yaw + (lk.sy || 0) + (lk.gy || 0), lp = Math.max(-1.45, Math.min(1.45, lk.pitch + (lk.gp || 0))) + (lk.sp || 0); if (ly || lp) cam.quaternion.multiply(_lookQ.setFromEuler(_lookE.set(lp, ly, 0, 'YXZ'))); }   // (sy, sp: a shake laid over it, the gun's; gy, gp: the phone itself turned)
@@ -1041,13 +1041,31 @@ export class Engine {
   // the flight itself looks about. The keys add to it (steer.x right, steer.y up). The
   // tube is a little over two portal radii wide, narrower on a short route, and closes to half a radius at the portal so
   // the crossing is always inside the opening; downward there is little room, since the route often runs just above the ground.
+  // THE VIEW IS THE VIEWER'S (steer.own, set by the gun while the mouse is taken or the phone is turned to look). The flight
+  // then looks at nothing by itself: the view is a heading and a pitch of the viewer's own, level, which their turning adds
+  // to. It goes round with the bends of the world's route (not of a shot's: there the viewer aimed at the portal and keeps
+  // it), so someone who touches nothing is still carried down the route looking along it as they were. Left alone a while
+  // (own 1, the mouse) it comes slowly back to straight ahead.
+  _ownView(A, dt) {
+    const lk = this.look, st = this.steer, e = _lookE.setFromQuaternion(this.camQuat, 'YXZ'), wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+    const moved = lk.yaw !== 0 || lk.pitch !== 0;
+    let yaw = e.y + lk.yaw, pitch = clamp(e.x + lk.pitch, -1.45, 1.45); const roll = e.z * Math.exp(-dt * 5);
+    lk.yaw = lk.pitch = 0;
+    A.path.tangentAtDist(A.dist, _st);
+    const head = !A.shot && Math.hypot(_st.x, _st.z) > 0.2 ? Math.atan2(-_st.x, -_st.z) : null;
+    if (head != null && this._ownPath === A.path && this._ownHead != null) yaw += wrap(head - this._ownHead);
+    this._ownPath = A.path; this._ownHead = head;
+    this._ownIdle = moved || st.x || st.y || st.target || A.shot || this.throttle !== 1 ? 0 : (this._ownIdle || 0) + dt;
+    if (st.own === 1 && head != null && this._ownIdle > 3) { const k = 1 - Math.exp(-dt * 0.5); yaw += wrap(head - yaw) * k; pitch += (Math.asin(clamp(_st.y, -1, 1)) - pitch) * k; }
+    this.camQuat.setFromEuler(_lookE.set(pitch, yaw, roll, 'YXZ'));
+  }
   steerRoom(A, remaining) {
-    const r = Math.min(A.portal.hx, A.portal.hy) || 7, wide = Math.min(clamp(r * 2.3, 4, 24), A.path.length * 0.25);
-    return { r, wide, lim: r * 0.5 + (wide - r * 0.5) * smoothstep(r * 1.2, r * 6, remaining), down: Math.min(1.2, wide * 0.15) };
+    const r = Math.min(A.portal.hx, A.portal.hy) || 7, wide = Math.min(clamp(r * 4, 6, 48), A.path.length * 0.25);
+    return { r, wide, lim: r * 0.5 + (wide - r * 0.5) * smoothstep(r * 1.2, r * 6, remaining), down: Math.min(Math.max(1.2, wide * 0.3), wide) };
   }
   _steer(A, dt, remaining) {
     const st = this.steer, off = this.off || (this.off = new THREE.Vector3()), cam = this.camera, L = A.path.length;
-    const r = Math.min(A.portal.hx, A.portal.hy) || 7, wide = Math.min(clamp(r * 2.3, 4, 24), L * 0.25);
+    const r = Math.min(A.portal.hx, A.portal.hy) || 7, wide = Math.min(clamp(r * 4, 6, 48), L * 0.25);
     _sf.set(0, 0, -1).applyQuaternion(cam.quaternion); _sg.set(0, 0, -1).applyQuaternion(this.camQuat); _sr.set(1, 0, 0).applyQuaternion(cam.quaternion);
     A.path.tangentAtDist(A.dist, _st);
     const lk = this.look, ty = lk ? lk.yaw + (lk.gy || 0) : 0, turned = lk ? Math.hypot(Math.atan2(Math.sin(ty), Math.cos(ty)), lk.pitch + (lk.gp || 0)) : 0;
@@ -1055,7 +1073,7 @@ export class Engine {
     // way left to it along the route, so it is met however the flight's own view turns meanwhile. The view then steers nothing.
     const tg = st.target; let homing = false;
     if (tg) { _sg.copy(tg).sub(cam.position).sub(off); const along = _sg.dot(_st); if (along > 0.5) { homing = true; if (dt > 0) { _sg.addScaledVector(_st, -along); off.addScaledVector(_sg, Math.min(1, 2 * Math.max(this.speed, 1) * dt / along)); } } }
-    const w = homing ? 0 : (st.look ?? 1) * smoothstep(0.04, 0.14, turned), fT = _sf.dot(_st);   // w: how far the view is the viewer's own
+    const w = homing ? 0 : (st.look ?? 1) * (st.own ? 1 : smoothstep(0.04, 0.14, turned)), fT = _sf.dot(_st);   // w: how far the view is the viewer's own
     this._steerFwd = 1 + (clamp(fT, 0, 1) - 1) * Math.min(1, w);
     if (dt > 0) {
       const cruise = (L / A.duration) * this.settings.speed, v = Math.max(this.speed, cruise * 0.5) / Math.max(fT, 0.35);   // (the pace along the route is the forward part of the flight: the whole is that much more)
@@ -1064,7 +1082,7 @@ export class Engine {
       if (st.x) { _sr.addScaledVector(_st, -_sr.dot(_st)); off.addScaledVector(_sr, st.x * cruise * 0.9 * dt); }
       if (st.y) off.y += st.y * cruise * 0.9 * dt;
     }
-    const lim = r * 0.5 + (wide - r * 0.5) * smoothstep(r * 1.2, r * 6, remaining), down = Math.min(1.2, wide * 0.15, lim);
+    const lim = r * 0.5 + (wide - r * 0.5) * smoothstep(r * 1.2, r * 6, remaining), down = Math.min(Math.max(1.2, wide * 0.3), lim);   // (a little way down too: the route often runs not far above the ground)
     if (off.y < -down) off.y = -down;
     const len = off.length(); if (len > lim) off.multiplyScalar(lim / len);
   }

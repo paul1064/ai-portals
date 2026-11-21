@@ -60,8 +60,9 @@ This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself 
 | 1 to 6 | The dial's positions by number |
 | First click | Takes the mouse: from then on it looks round, as in a first-person game (Esc gives it back) |
 | Looking | You fly where you look: the flight drifts toward it, inside a tube round the world's own route |
-| W A S D, arrow keys | W pushes on, S (or Shift) brakes to a hover, A and D slip sideways |
-| Space / C | Rise / sink |
+| W A S D | W pushes on, S brakes to a hover, A and D slip sideways |
+| Arrow keys | Turn the view, as the mouse does (handy with a touchpad, which is dead while keys are held) |
+| Space / left Shift or C | Rise / sink |
 | Golden cores | They hang beside the route of every world. Look at one for a moment and it is marked (its ring turns white): the flight then closes on it by itself. Caught, it loads a push (three at the most; you start with one) and is one more to spend. The count at the upper right is what you have |
 | The log | Every dimension you reach for the first time is counted (the stamp on arrival says how many of all) and brings a core |
 | B, or a tap on the count | The workshop, where cores are spent: the dial's FREMD (4) and BIZARR (8), which until then behave as Zufall; three steps of a stronger charged shot (3, 6, 10); room for five pushes (6). It also starts the race: sixty seconds, ten points a world and five a core |
