@@ -359,16 +359,23 @@ export class Engine {
     perf.setPhase('compile:' + id);
     let t0 = performance.now(), i = 0;
     const before = new Set(r.info.programs);
-    const some = { traverseVisible() {}, traverse: (fn) => { const t = performance.now(), ms = this._budget(); while (i < draws.length) { try { fn(draws[i++]); } catch (e) { console.warn('compile', id, e); } if (performance.now() - t > ms) break; } } };
+    //    WHERE THE BROWSER CANNOT COMPILE IN THE BACKGROUND (no KHR_parallel_shader_compile: Firefox) a program reports ready
+    //    at once and the graphics process links it when it gets to it, the picture waiting behind it. Made a frame's share
+    //    at a time they all stood in that queue together: 4 s and 11 s of standstill on an Intel HD at the first thing
+    //    drawn afterwards (a viewer's reports of 11-22). There (serial) one program is made at a time and waited for
+    //    (_linked), with as long a rest of ordinary frames after a dear one as it took.
+    const serial = !r.extensions.has('KHR_parallel_shader_compile');
+    const some = { traverseVisible() {}, traverse: (fn) => { const t = performance.now(), ms = this._budget(), n0 = r.info.programs.length; while (i < draws.length) { try { fn(draws[i++]); } catch (e) { console.warn('compile', id, e); } if (performance.now() - t > ms || (serial && ms < 1e6 && r.info.programs.length > n0)) break; } } };
     while (i < draws.length) {
       r.setRenderTarget(this._warmRT);
       try { r.compile(some, this.camera, scene); } finally { r.setRenderTarget(null); }
+      if (serial) await this._linked(id);
       if (i < draws.length) await this._frame();
     }
     //    The shadow pass draws each caster with a depth material of three's own, which no scene holds: its programs
     //    used to be made inside the warm-up draws below, linked and used in one call, and the page stood still for
     //    each. _shadowPrograms makes them here, to be waited for with the rest.
-    await this._shadowPrograms(W, draws, lights);
+    await this._shadowPrograms(W, draws, lights, serial);
     const fresh = r.info.programs.filter((p) => !before.has(p));
     W.programs = fresh.length;
     for (let n = 0; n < 2400; n++) {                           // at most a minute; a program that never reports is used as it is
@@ -387,7 +394,7 @@ export class Engine {
     let px = 0, t = performance.now();
     for (const x of texs) {
       const im = Array.isArray(x.image) ? x.image[0] : x.image, n = ((im && im.width) || 1) * ((im && im.height) || 1) * (x.isCubeTexture ? 6 : 1) * ((im && im.depth) || 1);
-      if (px && this._budget() < 1e6 && (px + n > (this._urgent ? 4e6 : 1.2e6) || performance.now() - t > this._budget())) { await this._frame(); px = 0; t = performance.now(); }
+      if (px && this._budget() < 1e6 && (px + n > (this._urgent ? 4e6 : 1.2e6) || performance.now() - t > this._budget())) { await this._gpuIdle(true); px = 0; t = performance.now(); }
       try { r.initTexture(x); } catch (e) { /* drawn the usual way later */ }
       px += n;
     }
@@ -402,21 +409,31 @@ export class Engine {
     //    process has finished the last (_gpuIdle): what a first draw costs there (a driver's own shader work, uploads)
     //    does not show in this thread's time, and a burst of first draws can hold frames back for seconds.
     const label = (o) => { const m = Array.isArray(o.material) ? o.material[0] : o.material; return (o.name || (m && (m.name || m.type)) || o.type || '').slice(0, 40); };
-    let j = 0, many = 4;
+    //    HOW MANY AT A TIME goes by what the batch before cost the graphics process, not this thread (wall: from the batch
+    //    to the frame in which it was found finished). On a weak card one object's first draw can take a quarter of a second
+    //    there and none of it here; batches sized by this thread's time held every frame for 0.7 s. A batch that cost
+    //    little is followed by a larger one, a dear one by a single object. The same when the world is wanted soon
+    //    (_urgent): larger batches are allowed there, but still only what the card has shown it can take.
+    let j = 0, many = 1;
     while (j < draws.length) {
-      const ms = this._budget(), paced = ms < 1e6 && !this._urgent; t = performance.now();   // (in a hurry: as many as fit the frame's share, not one small batch a frame)
+      const ms = this._budget(), paced = ms < 1e6; t = performance.now();
       const lm = lights.map((l) => l.layers.mask); for (const l of lights) l.layers.enable(31);
       try {
         do {
           const batch = [], tb = performance.now(); let verts = 0;
-          while (j < draws.length && batch.length < (paced ? Math.min(many, 3) : many) && verts < 150000) { const o = draws[j++]; batch.push(o); verts += size(o); }
+          while (j < draws.length && batch.length < many && verts < 150000) { const o = draws[j++]; batch.push(o); verts += size(o); }
           if (paced) perf.setPhase('warm:' + id + ':' + label(batch[0]));
           this._warmDraw(scene, cam, batch);
-          const took = performance.now() - tb;                  // a batch that overran is followed by smaller ones
-          many = took > ms * 2 ? Math.max(1, many >> 1) : took < ms * 0.5 ? Math.min(8, many + 1) : many;
+          if (!paced) { const took = performance.now() - tb; many = took > ms * 2 ? Math.max(1, many >> 1) : took < ms * 0.5 ? Math.min(8, many + 1) : many; }
         } while (!paced && j < draws.length && performance.now() - t < ms);
       } finally { lights.forEach((l, k) => { l.layers.mask = lm[k]; }); for (const [sh, need] of baked) sh.needsUpdate = need; }
-      if (paced) await this._gpuIdle(); else if (j < draws.length) await this._frame();
+      if (paced) {
+        await this._gpuIdle(true);
+        const wall = performance.now() - t, usual = Math.max(16.7, Math.min(perf.norm, 120));   // (the usual frame, within reason: the stalls themselves are in that median)
+        many = wall > usual * 2.5 ? 1 : wall > usual * 1.6 ? Math.max(1, many >> 1) : Math.min(this._urgent ? 12 : 4, many + 1);
+        //    (after a batch that held the picture, as long again of ordinary frames, unless the world is wanted soon)
+        if (wall > 150) for (const until = performance.now() + Math.min(500, wall); performance.now() < until && this._budget() < 1e6 && !this._urgent;) await this._frame();
+      } else if (j < draws.length) await this._frame();
     }
     W.warmMs = performance.now() - t0;
     // (programs made after the wait above, inside the warm-up draws: each was linked and used at once. For the
@@ -431,7 +448,7 @@ export class Engine {
   // and compiled with the same lights, under a buffer as the shadow map is: three finds its program made and ready.
   // (A world's own customDepthMaterial is compiled as itself, with the state three would give it.) Ours are kept
   // while the world lives (W.depthMats), since a program nobody holds is deleted, and freed with the world.
-  async _shadowPrograms(W, draws, lights) {
+  async _shadowPrograms(W, draws, lights, serial) {
     const r = this.renderer, made = W.depthMats = [];
     if (!r.shadowMap.enabled) return;
     const dirs = lights.some((l) => l.castShadow && !l.isPointLight), points = lights.some((l) => l.castShadow && l.isPointLight);
@@ -466,10 +483,11 @@ export class Engine {
     const none = this._noScene || (this._noScene = new THREE.Scene());   // the shadow pass draws under no scene: no fog, no environment
     let k = 0;
     const some = { traverseVisible: (fn) => { for (const l of lights) fn(l); },
-      traverse: (fn) => { const t = performance.now(), ms = this._budget(); while (k < items.length) { try { fn(items[k++]); } catch (e) { console.warn('compile depth', W.def.id, e); } if (performance.now() - t > ms) break; } } };
+      traverse: (fn) => { const t = performance.now(), ms = this._budget(), n0 = r.info.programs.length; while (k < items.length) { try { fn(items[k++]); } catch (e) { console.warn('compile depth', W.def.id, e); } if (performance.now() - t > ms || (serial && ms < 1e6 && r.info.programs.length > n0)) break; } } };
     while (k < items.length) {
       r.setRenderTarget(this._warmRT);
       try { r.compile(some, this.camera, none); } catch (e) { console.warn('compile depth', W.def.id, e); k = items.length; } finally { r.setRenderTarget(null); }
+      if (serial) await this._linked(W.def.id);
       if (k < items.length) await this._frame();
     }
     // three keeps the lights it was handed in the render state of the scene it compiled under, and that scene lives as long as the
@@ -478,12 +496,28 @@ export class Engine {
     // list empty; it makes no program and draws nothing. (Found and proved in the page by the performance pass, 10-10.)
     try { r.compile({ traverseVisible() {}, traverse() {} }, this.camera, none); } catch (e) { /* nothing was kept */ }
   }
+  // For a browser that links programs only in turn (see _prepare): asks each program not asked before for its link state,
+  // which makes the graphics process finish it now, in this call, where the time it takes can be seen. After a dear one
+  // the flight is given as long again of ordinary frames (half a second at the most), unless the world is wanted soon.
+  async _linked(id) {
+    const r = this.renderer, gl = r.getContext(), done = this._linkDone || (this._linkDone = new WeakSet());
+    for (const p of r.info.programs) {
+      if (done.has(p)) continue; done.add(p);
+      const t = performance.now();
+      this.perf.setPhase('link:' + id + ':' + (p.name || p.type || ''));
+      try { if (p.program) gl.getProgramParameter(p.program, gl.LINK_STATUS); } catch (e) { /* disposed meanwhile */ }
+      const took = performance.now() - t; this.perf.mark('link:' + id, took);
+      if (took > 30) for (const until = performance.now() + Math.min(500, took); performance.now() < until && this._budget() < 1e6 && !this._urgent;) await this._frame();
+    }
+    this.perf.setPhase('compile:' + id);
+  }
   // Waits, a frame at a time and without blocking, until the graphics process has finished everything sent so far.
-  async _gpuIdle() {
+  // (hurry: also when the world is wanted soon; without it such a load does not wait for the card, only for the next frame)
+  async _gpuIdle(hurry) {
     const gl = this.renderer.getContext();
     if (!gl.fenceSync) return this._frame();
     const s = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush();
-    try { for (let n = 0; n < 900; n++) { await this._frame(); if (this._budget() >= 1e6 || this._urgent || gl.clientWaitSync(s, 0, 0) !== gl.TIMEOUT_EXPIRED) break; } }
+    try { for (let n = 0; n < 900; n++) { await this._frame(); if (this._budget() >= 1e6 || (this._urgent && !hurry) || gl.clientWaitSync(s, 0, 0) !== gl.TIMEOUT_EXPIRED) break; } }
     finally { gl.deleteSync(s); }
   }
   _warmDraw(scene, cam, batch) {
