@@ -1,4 +1,6 @@
 // The portal gun: a hand-held rift projector drawn over the flight, and the controls that go with it.
+// (Since 11-22 neither the gun nor the hand holding it is drawn: a tap or click opens the portal, an open hand shows for
+// that moment, and the dial's state is written at the upper right. ?model=1 draws the gun again. See MODEL below.)
 //   left click     open a portal where the crosshair points; the flight turns into it. Held and let go: a charged shot,
 //                  whose portal stands further off, is wider and is flown to faster
 //   right click    the push: a white hole where the crosshair points hurls you back and up, to a portal at the end of the throw
@@ -87,6 +89,15 @@ body.gun-touch #gun-pad { display: flex; }
 #gun-race:empty { display: none; }
 #gun-cores small { font-size: 11px; opacity: .75; margin-left: .7em; }
 body.notitles #gun-cores { display: none; }
+#gun-hand { position: fixed; left: 50%; top: 62%; margin: 0; pointer-events: none; z-index: 3; opacity: 0; font-size: clamp(84px, 19vh, 170px); line-height: 1; transform: translate(-50%, 40%) scale(.6); filter: drop-shadow(0 0 14px var(--gun, #6dff3b)) drop-shadow(0 0 34px var(--gun, #6dff3b)); will-change: transform, opacity; }
+#gun-hand.go { animation: gun-hand .62s cubic-bezier(.2, .9, .3, 1) both; }
+@keyframes gun-hand { 0% { opacity: 0; transform: translate(-50%, 40%) scale(.6); } 22% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); } 55% { opacity: 1; transform: translate(-50%, -56%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -30%) scale(.92); } }
+@media (prefers-reduced-motion: reduce) { #gun-hand.go { animation-duration: .4s; } }
+#gun-hud { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(68px + env(safe-area-inset-top, 0px)); pointer-events: none; z-index: 3; text-align: right; font: 600 12px/1.5 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; letter-spacing: .16em; color: #fff; text-shadow: 0 0 8px var(--gun, #6dff3b), 0 1px 2px rgba(0, 0, 0, .8); opacity: 0; transition: opacity .4s ease; }
+#gun-hud.on { opacity: .9; }
+#gun-hud b { color: var(--gun, #6dff3b); font-size: 15px; letter-spacing: .2em; }
+#gun-hud i { font-style: normal; opacity: .7; }
+body.notitles #gun-hud { display: none; }
 @media (max-height: 480px) { #gun-pad { bottom: calc(74px + env(safe-area-inset-bottom, 0px)); flex-direction: row; gap: 8px; } #gun-pad button { min-width: 82px; width: 82px; padding: 0 4px; font-size: 12px; letter-spacing: .06em; } }
 `;
 
@@ -102,7 +113,15 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   const pad = document.createElement('div'); pad.id = 'gun-pad';
   pad.innerHTML = '<button id="gun-b-mode" aria-label="Ziel wählen"><small>ZIEL</small><span></span></button><button id="gun-b-brake" aria-label="Bremsen (halten)"><small>HALTEN</small>BREMSE</button><button id="gun-b-tilt" aria-label="Umschauen durch Drehen des Handys" aria-pressed="false"><small>HANDY</small>NEIGEN</button><button id="gun-b-push" aria-label="Push: ein weißes Loch schleudert dich weg"><small>WEISSES LOCH</small>PUSH</button><button id="gun-b-slow" aria-label="Zeitlupe: f\u00FCnf Sekunden, kostet einen Kern"><small>1 \u25C6</small>ZEITLUPE</button>';
   const chip = document.createElement('div'); chip.id = 'gun-cores';
-  document.body.append(flash, cross, stamp, pad, chip); document.body.classList.add('gun');
+  // NO GUN IN THE PICTURE (the owner's wish, 11-22): the model of the gun and the hand that held it are still built, since the
+  // bolt, the glows and the dial hang on them, but they are not drawn (?model=1 shows them again). A portal is opened by a tap
+  // or a click on the place, and for that moment an open hand comes up under it (#gun-hand). What the gun's little screen said
+  // (the dial's position, its state, the dimension ahead) is written at the upper right (#gun-hud).
+  const MODEL = !!engine.opts.gunModel;
+  const hand = document.createElement('div'); hand.id = 'gun-hand'; hand.textContent = '\u270B'; hand.setAttribute('aria-hidden', 'true');
+  const hud = document.createElement('div'); hud.id = 'gun-hud';
+  const showHand = (cx) => { hand.style.left = Math.max(70, Math.min(window.innerWidth - 70, cx)) + 'px'; hand.classList.remove('go'); void hand.offsetWidth; hand.classList.add('go'); };
+  document.body.append(flash, cross, stamp, pad, chip); if (!MODEL) document.body.append(hand, hud); document.body.classList.add('gun');
 
   // INLINE: no canvas and no context of the gun's own. The engine calls draw() at the end of each of its frames (engine.overlay)
   // and the gun's scene goes over the finished picture: one context, one layer on the screen, nothing to blend.
@@ -363,6 +382,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     return { pos: new THREE.Vector3(), on: false, gone: 0, pick: 2, halo, heart, rg, ph: Math.random() * 6.28 };
   });
   const tinted = [holeHalo.material.color, ring.material.color, sparks.material.color, streaks.material.color, glow.emissive, fluidMat.uniforms.uColor.value, tipGlow.material.color, vialGlow.material.color, vialLight.color, muzzleLight.color, bolt.material.color, burst.material.color, ...trail.map((t) => t.material.color)];
+  if (!MODEL) gun.visible = false;   // (see MODEL: built, never drawn)
 
   // ---------- state ----------
   let mode = 0; try { const m = Number(localStorage.getItem('portals.gun.mode')); if (m >= 0 && m < MODES.length) mode = Math.floor(m); } catch (e) {}
@@ -465,6 +485,11 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const code = n && n.def && !ante ? dimCode(n.def.id) : '··-···', name = ready && n.def ? String(n.def.name || '').toUpperCase() : '';
     const bars = engine.mobile ? Math.round(charge * 4) * 3 : Math.round(charge * 12), sig = [mode, status, code, name, bars, status === 'SUCHE ZIEL' || status === 'KALIBRIERE' ? blink : 0].join('|');
     if (sig === dispKey) return; dispKey = sig;
+    if (!MODEL) {   // no screen to draw on: the same words at the upper right
+      hud.replaceChildren(); const b = document.createElement('b'); b.textContent = m.name; const i = document.createElement('i'); i.textContent = status + (ante ? '' : ' \u00B7 ' + code);
+      hud.append(b, document.createElement('br'), i); if (name) { const n2 = document.createElement('i'); n2.textContent = name.length > 34 ? name.slice(0, 32).trimEnd() + '\u2026' : name; hud.append(document.createElement('br'), n2); }
+      return;
+    }
     const g = dg, W = 512, H = 340, c = m.color, mono = 'ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace';
     g.fillStyle = '#020604'; g.fillRect(0, 0, W, H);
     const bgG = g.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, 330); bgG.addColorStop(0, hexA(c, 0.16)); bgG.addColorStop(1, hexA(c, 0.02)); g.fillStyle = bgG; g.fillRect(0, 0, W, H);
@@ -506,7 +531,8 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     if (!res) { say('ZU NAH', 1200); dry(); return; }
     charge = 0; recoilV += (FLASH ? 8 : 5.2) + 7 * power; heat = 1; sloshV += 9; lastShotWorld = A; rift = null; if (FLASH) shake = Math.max(shake, 0.45 + 0.9 * power);
     // (a push: the bolt goes to where the white hole is struck, a short way off; the portal, at the far end of the throw, opens by itself)
-    shot = { t: 0, delay: res.push ? 0.09 : res.delay, point: res.push ? res.origin : res.point, exit: res.point, radius: res.radius, push: res.push, landed: false, from: body.localToWorld(_v.copy(MUZZLE)).clone(), hist: [] };
+    shot = { t: 0, delay: res.push ? 0.09 : res.delay, point: res.push ? res.origin : res.point, exit: res.point, radius: res.radius, push: res.push, landed: false, from: MODEL ? body.localToWorld(_v.copy(MUZZLE)).clone() : _v.set((cx / window.innerWidth) * 2 - 1, -0.5, 0.5).unproject(cam).sub(cam.position).setLength(0.5).add(cam.position).clone(), hist: [] };
+    if (!MODEL) showHand(cx);
     cross.classList.add('kick'); requestAnimationFrame(() => requestAnimationFrame(() => cross.classList.remove('kick')));
     pull = 1; buzz(res.push ? [40, 30, 90] : Math.round(14 + 40 * power));
     if (res.push) { boom(); say('PUSH', 900); recoilV += 5; } else { bang(res.delay, power); if (power > 0.3) say(power >= maxPower() ? 'VOLLE LADUNG' : 'AUFGELADEN', 900); }
@@ -734,6 +760,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     if (locked && blocked()) { try { document.exitPointerLock(); } catch (e) {} }
     raise += ((live ? 1 : 0) - raise) * (1 - Math.exp(-dt * (live ? 3.2 : 7)));
     if (live && !firstUp && raise > 0.5) { firstUp = true; toast(document.body.classList.contains('gun-touch') ? 'Tippen: Portal (halten l\u00E4dt auf) · PUSH: wegschleudern · Wischen oder NEIGEN: umschauen' : 'Linksklick: Portal (halten oder X halten l\u00E4dt auf) · Rechtsklick: Push · W/S: schneller/langsamer · Shift: Hyperboost · Mausrad: Ziel', 6000); }
+    hud.classList.toggle('on', live && raise > 0.6);
     cross.classList.toggle('on', live && (hover || locked || now - tapAt < 500) && raise > 0.6); pad.classList.toggle('on', live); cross.classList.toggle('cold', charge < 1 || !(engine.next && engine.next.ready)); chip.classList.toggle('on', live && raise > 0.6);
     if (lostAt) return;
     if (engine.stats) { engine.stats.gunLevel = level; engine.stats.gunFps = Math.round(fpsE); }   // for the debug panel (?debug=1)

@@ -1,5 +1,5 @@
 {
- "build": "83123ca478",
+ "build": "f5057f6bf6",
  "files": {
   "src/companions/the-drift.js": "92861874d6",
   "src/companions/wandering-lantern.js": "d254acb7fc",
@@ -18,7 +18,7 @@
   "src/extras.js": "531597d378",
   "src/gun/clip.js": "e4ff783c76",
   "src/gun/dim.js": "3fd6a1f164",
-  "src/gun/portal-gun.js": "2670bb9240",
+  "src/gun/portal-gun.js": "1a35db1824",
   "src/kit/core.js": "81ac8f555d",
   "src/kit/fauna/alien.js": "56c6f3f642",
   "src/kit/fauna/birds.js": "3357b660e3",
@@ -41,7 +41,7 @@
   "src/kit/terrain/textures.js": "a5f6e85897",
   "src/kit/terrain.js": "5f94cb6b19",
   "src/kit/water.js": "390c88a4c9",
-  "src/main.js": "48d5c1d373",
+  "src/main.js": "18a76ec08f",
   "src/rides/firefly-lantern.js": "3ba05bdabf",
   "src/rides/magic-carpet.js": "47e4fbd7a2",
   "src/styles/pastel-dream.js": "8d7d157c6f",

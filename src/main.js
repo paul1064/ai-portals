@@ -44,6 +44,7 @@ async function boot() {
     flash: q.get('flash') !== '0',   // the gun's loud effects (shock wave, shake, streaks of light, quicker fire); ?flash=0 for the quiet gun
     gunInline: q.has('inline') ? q.get('inline') !== '0' : undefined,   // test aid: the gun drawn into the picture itself, as on a phone (?inline=1), or on a layer of its own (?inline=0)
     ahead: q.has('ahead') ? q.get('ahead') !== '0' : undefined,   // the world after the next got ready ahead (engine._lookAhead): by default with the gun on a desktop
+    gunModel: q.get('model') === '1',   // ?model=1: the gun and the hand are drawn again (by default a portal is opened by a tap alone, see src/gun)
     shots: !plain && q.get('gun') !== '0',   // the portal gun (src/gun/portal-gun.js); ?gun=0 flies without it
     seed: q.has('session') ? num('session') : undefined, seen,
     tourHours: journey ? journey.hours : null,   // the hour a journey names for a step (design/suites.json hours), ahead of the viewer's own Hour while it lasts

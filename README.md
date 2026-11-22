@@ -70,6 +70,8 @@ This copy adds a hand-held portal gun (`src/gun/portal-gun.js`; the shot itself 
 | Enter, M, N | Pause, sound, hurry to the next portal (with the gun on, space, S and the right arrow fly instead; G alone is the gentle camera) |
 | Touch screen | Tap to shoot where you tap, drag to look round; buttons at the lower left turn the dial, brake, (NEIGEN) let you look round by turning the phone itself, and fire the push |
 
+Neither the gun nor the hand holding it is drawn any more: a tap or a click opens the portal, an open hand (✋) comes up for that moment, and what the gun's little screen said (the dial's position, its state, the dimension ahead) is written at the upper right. `?model=1` draws the gun again.
+
 The gun is loud by default: a shock ring and sparks where a portal opens, a shake, streaks of light and a wider lens on the way in, and quick fire. `?flash=0` gives the quiet gun, and the Gentle setting (G) keeps the shake and the lens out.
 
 ## Controls
