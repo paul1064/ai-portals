@@ -146,6 +146,7 @@ Changed against the original tree (commit `210133f`):
 
 - `src/gun/portal-gun.js` (new): the gun's model, its display and dial, the bolt, the sounds, mouse look, touch controls, brake and push, and the loud effects.
 - `src/core/engine.js`: `shoot()`, `canShoot()`, `requeue()` and the ray test behind them; a hidden portal made with each world for the shot; the viewer's look and throttle; a hook (`chooser`) that lets the dial pick the next world.
+- `src/core/engine.js`, loading: with the gun on, a world wanted soon is no longer handed to the graphics card in one piece (the picture stood still for seconds shortly after a crossing) but in a share of each frame, and on a desktop the world after the next is got ready ahead (`_lookAhead()`; `?ahead=0` switches it off, `?ahead=1` asks for it on a phone).
 - `src/core/portal.js`: one more portal look, `vortex`, used only for shot portals.
 - `src/main.js`: two lines that switch the gun on (`?gun=0` switches it off).
 - `README.md`: the notice at the top and the two sections about the gun.

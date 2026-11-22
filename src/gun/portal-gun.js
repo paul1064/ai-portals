@@ -379,10 +379,11 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
   let charge = 1, raise = 0, recoil = 0, recoilV = 0, heat = 0, slosh = 0, sloshV = 0, knobAng = 0, mx = 0.25, my = -0.1, aimX = 0, aimY = 0, hover = false, note = '', noteUntil = 0, shot = null, lastShotWorld = null, dispKey = '', swayX = 0, swayY = 0;
   const lastQ = new THREE.Quaternion(); let lastQSet = false;
 
-  const pickFor = (m) => {
+  // (ahead: the engine asks for the world after the one waiting behind the portal, which then stands in as engine.cur)
+  const pickFor = (m, ahead) => {
     const cur = engine.cur && engine.cur.def.id;
     if (m.id === 'any' || lockedMode(m)) return null;   // (a position not yet bought behaves as ZUFALL)
-    if (m.id === 'back') { const id = trailIds[trailIds.length - 2]; return (id && worldsById.get(id)) || null; }
+    if (m.id === 'back') { const id = trailIds[trailIds.length - (ahead ? 3 : 2)]; return (id && worldsById.get(id)) || null; }
     let pool;
     if (m.id === 'fav') pool = engine.registry.filter((d) => hearts && hearts.has(d.id) && d.id !== cur);
     else { const recent = engine.recent.slice(-8); pool = engine._pool().filter((d) => d.id !== cur && !recent.includes(d.id) && tierOf(d) === m.tier); }
@@ -391,7 +392,7 @@ export function setupGun({ engine, hearts, toast, soundOn, flash: FLASH = true }
     const from = fresh.length ? fresh : pool;
     return from[Math.floor(Math.random() * from.length)];
   };
-  engine.chooser = () => pickFor(MODES[mode]);
+  engine.chooser = (ahead) => pickFor(MODES[mode], ahead);
   const look = engine.look = { yaw: 0, pitch: 0 }; engine.throttle = 1;
   let locked = false, lockTip = false; const keys = { brake: false, push: false, hyper: false };
   const thr = () => (keys.brake ? 0.06 : keys.hyper ? 6 : keys.push ? 2.4 : 1);   // the flight's pace: braked, hyperboost, pushed on, its own

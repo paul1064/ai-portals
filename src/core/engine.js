@@ -42,6 +42,7 @@ const ARRIVE_SPEED = 4;
 // the cruise of the world being left (frame(), THE DOORWAY); the eased arrival above applies only while the flight is speeding up:
 // one that arrives faster than the new world's pace comes down at the usual rate, so it does not rush through a slow world's opening.
 const DOOR_FLOOR = 0.15;
+const URGENT = 14;   // ms of a frame a world's load may take when it is wanted soon and the picture must still move (_budget)
 
 
 // A world may return pace(u): how fast to travel at u (0 to 1 along its path) compared with its average, so it can
@@ -117,7 +118,7 @@ export class Engine {
     this.postNow = normalizePost();
     this.camQuat = new THREE.Quaternion(); this.camInit = false; this.arrived = Infinity;   // seconds flown since the last crossing (_swap)
     this.time = 0; this.speed = 0; this.blend = 0; this.reveal = 0; this.fade = 0;
-    this.cur = null; this.next = null; this.count = 0; this._waiters = []; this._trash = []; this._slice = -1e9;
+    this.cur = null; this.next = null; this.after = null; this.count = 0; this._waiters = []; this._trash = []; this._slice = -1e9;
     this.session = opts.seed ?? Math.floor(Math.random() * 1e9);
     this.pickRng = makeRng(hashSeed('pick:' + this.session));
     this.bags = [[], [], []]; this.visits = {}; this.lastId = null; this.recent = []; this.boost = 0;
@@ -202,16 +203,19 @@ export class Engine {
   _first(defs) { const def = firstWorld(this, defs || this.registry); if (def) this._complete(def); return def; }
 
   // ---------- loading ----------
-  async _load(def, seed) {
+  // from: the world this one is entered from; left out, the world on screen. (A world got ready ahead, _lookAhead, is entered
+  // from the one that is still waiting behind the portal.)
+  async _load(def, seed, from) {
+    const prev = from || this.cur, ahead = from && from !== this.cur ? 1 : 0;
     const W = { def, seed, ready: false, time: 0, dist: 0, view: new PortalView(this._blank), flight: { rate: 1 } };
     let t0 = performance.now();
     const kit = [];   // dear kit steps of this build (renderer.kitDefer while it builds); all run before the world is used
     const ctx = {
       THREE, core, seed, rng: makeRng(seed), noise: makeNoise(seed ^ 0x5bd1e995), renderer: this.renderer,
-      index: this.count, aspect: this.w / this.h, yield: () => this._yield(kit), frame: () => this._frame(), portalView: W.view,
+      index: this.count + ahead, aspect: this.w / this.h, yield: () => this._yield(kit), frame: () => this._frame(), portalView: W.view,
       // true while this world is the next one, seen through the portal of the world on screen; false from the crossing
       // on (and always for the world a journey starts in). A field on this object: _swap changes it.
-      through: !!this.cur,
+      through: !!prev,
       // the viewer's graphics level: detail (0.6 on low, 0.8 on medium, 1 above) is a hint for thinning particles,
       // instances and ray-march steps; never use it to remove the things a world is about
       quality: { level: this.tier, detail: TIERS[this.tier].detail, mobile: this.mobile },
@@ -223,7 +227,7 @@ export class Engine {
       // from: the world on screen while this one is built, which is the world this one is entered from: { id, def, world
       // (what its build() returned) }, or null for the world a journey starts in. suite: this world's place in a made series,
       // { id, part, of } (part 1 is the first), or null. Both for worlds built to follow one another (docs/WORLD_GUIDE.md).
-      from: this.cur && !this.cur.def.antechamber ? { id: this.cur.def.id, def: this.cur.def, world: this.cur.world } : null,
+      from: prev && !prev.def.antechamber ? { id: prev.def.id, def: prev.def, world: prev.world } : null,
       suite: Array.isArray(def.suite) ? { id: def.suite[0], part: def.suite[1], of: def.suite[2] } : null,
     };
     // hints a world may honour so that visits differ and the viewer's wishes carry across worlds
@@ -299,7 +303,7 @@ export class Engine {
     W.drawIn = W.drawWithin != null && W.path.length > W.drawWithin ? (typeof W.portalSpec.drawIn === 'number' && isFinite(W.portalSpec.drawIn) ? Math.max(0, Math.min(14, W.portalSpec.drawIn)) : Math.max(1, Math.min(14, W.drawWithin * 0.25))) : 0;
     W.media = world.media || def.media || ['air'];
     this._fit(W.scene);
-    try { await this.extras.prepare(W, this.cur); } catch (e) { console.warn('extras', e); }
+    try { await this.extras.prepare(W, prev); } catch (e) { console.warn('extras', e); }
     try { if (!def.antechamber) await this.style.prepare(W); } catch (e) { console.warn('style', e); }   // no art style in the antechamber, not even one chosen by name (it says ride, companion and style 'none' itself; only this one is not the world's to refuse)
     await this._frame();
     if (this.opts.prepare === false) { phase('compile'); try { await this.renderer.compileAsync(W.scene, this.camera); } catch (e) { console.warn('compile', e); } phase(''); }   // ?prep=0: the old way, for comparison
@@ -320,14 +324,20 @@ export class Engine {
   // How much to do per frame, in ms of this thread's time. No limit while nothing is on screen (the first world,
   // behind the veil), on test pages, and when the camera is about to need the world; more as the reveal gets close.
   _budget() {
-    const A = this.cur;
+    const A = this.cur; this._urgent = false;
     if (!A || this.opts.freeze || this.opts.hold || this.settings.paused) return 1e9;
     // In the antechamber world 1 is wanted soon, but its portal is on screen and should keep drifting. On a machine that
     // draws it smoothly the load goes in pieces (_anteMs); where frames come slower than ten a second there is no
     // smoothness to keep, and the load's graphics work is done at once.
     if (A.def.antechamber) return this._gap > 100 ? 1e9 : this._anteMs();
+    // A world being got ready ahead (_lookAhead) is wanted by nobody yet: the one behind the portal is ready. Gently.
+    if (this.after && !this.after.ready && this.next && this.next.ready) return 4;
     const remaining = A.path.length - A.dist, secs = (remaining - 45) / Math.max(1, this.speed);
-    if (secs < 1.5) return 1e9;
+    // WITH THE GUN THE PORTAL IS ALWAYS NEAR: a shot's route is a few seconds long, so "about to need the world" was true for
+    // the whole of it, and a world still loading then had everything it needs from the graphics card done in one piece: the
+    // picture stood still for seconds, about two seconds into every world flown through quickly. There the load keeps to a
+    // share of each frame (URGENT ms: the flight goes on, at a lower frame rate, and slows before the portal if it must).
+    if (secs < 1.5) { if (!this.opts.shots) return 1e9; this._urgent = true; return URGENT; }
     return remaining < A.revealDist * 1.2 || secs < 6 ? 10 : 4;
   }
   async _prepare(W) {
@@ -377,7 +387,7 @@ export class Engine {
     let px = 0, t = performance.now();
     for (const x of texs) {
       const im = Array.isArray(x.image) ? x.image[0] : x.image, n = ((im && im.width) || 1) * ((im && im.height) || 1) * (x.isCubeTexture ? 6 : 1) * ((im && im.depth) || 1);
-      if (px && this._budget() < 1e6 && (px + n > 1.2e6 || performance.now() - t > this._budget())) { await this._frame(); px = 0; t = performance.now(); }
+      if (px && this._budget() < 1e6 && (px + n > (this._urgent ? 4e6 : 1.2e6) || performance.now() - t > this._budget())) { await this._frame(); px = 0; t = performance.now(); }
       try { r.initTexture(x); } catch (e) { /* drawn the usual way later */ }
       px += n;
     }
@@ -394,7 +404,7 @@ export class Engine {
     const label = (o) => { const m = Array.isArray(o.material) ? o.material[0] : o.material; return (o.name || (m && (m.name || m.type)) || o.type || '').slice(0, 40); };
     let j = 0, many = 4;
     while (j < draws.length) {
-      const ms = this._budget(), paced = ms < 1e6; t = performance.now();
+      const ms = this._budget(), paced = ms < 1e6 && !this._urgent; t = performance.now();   // (in a hurry: as many as fit the frame's share, not one small batch a frame)
       const lm = lights.map((l) => l.layers.mask); for (const l of lights) l.layers.enable(31);
       try {
         do {
@@ -473,7 +483,7 @@ export class Engine {
     const gl = this.renderer.getContext();
     if (!gl.fenceSync) return this._frame();
     const s = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush();
-    try { for (let n = 0; n < 900; n++) { await this._frame(); if (this._budget() >= 1e6 || gl.clientWaitSync(s, 0, 0) !== gl.TIMEOUT_EXPIRED) break; } }
+    try { for (let n = 0; n < 900; n++) { await this._frame(); if (this._budget() >= 1e6 || this._urgent || gl.clientWaitSync(s, 0, 0) !== gl.TIMEOUT_EXPIRED) break; } }
     finally { gl.deleteSync(s); }
   }
   _warmDraw(scene, cam, batch) {
@@ -512,8 +522,44 @@ export class Engine {
     const n = (this.visits[def.id] = (this.visits[def.id] || 0) + 1);
     const seed = this.opts.fixedSeed ?? hashSeed(this.session + ':' + def.id + ':' + n);
     const slot = (this.next = { ready: false, def });
-    this._load(def, seed).then((W) => { if (this.next === slot) this.next = W; else this._dispose(W); })
+    this._load(def, seed).then((W) => { if (this.next === slot) { this.next = W; this._lookAhead(); } else this._dispose(W); })
       .catch((e) => { console.error('world failed', def.id, e); this.events.status({ error: def.id + ': ' + e.message }); if (this.tourDef === def) this.tourDef = null; this.seriesFailed.add(def.id); if (this.next === slot) { this.next = null; if (!this.opts.freeze) setTimeout(() => this._queueNext(), 200); } });
+  }
+  // THE WORLD AFTER THE NEXT, GOT READY AHEAD (with the gun, on a desktop; ?ahead=0 flies without, ?ahead=1 asks for it on a
+  // phone). A shot portal is reached within seconds, and the world behind the one after it used to be begun only 1.2 s after
+  // the crossing: someone who shot again at once met the next portal before its world was there. So as soon as the world
+  // behind the portal is ready, the one after it is chosen and loaded too (this.after), a little per frame, entered from the
+  // waiting world as that one is from the world on screen; at the crossing it becomes the next world, ready or still loading.
+  // It is chosen as it would have been after the crossing: the picker, a tour, a series and the gun's dial are asked with the
+  // waiting world standing in for the world on screen. Three worlds are then held at once, which is why a phone goes without.
+  _lookAhead() {
+    const A = this.cur, B = this.next, o = this.opts;
+    if (!(o.ahead ?? (o.shots && !this.mobile)) || o.single || o.freeze || this.lost || this.after) return;
+    if (!A || A.def.antechamber || !B || !B.ready) return;
+    let def = null;
+    this.cur = B; this.count++;
+    try {
+      if (this.chooser) { try { def = this.chooser(true); } catch (e) { console.warn('chooser', e); } }   // (false: this position of the dial has no world after the next)
+      if (def !== false) { def = def || tourNext(this) || seriesNext(this) || this._pick(); this._complete(def); }
+    } catch (e) { console.warn('ahead', e); def = false; }
+    finally { this.cur = A; this.count--; }
+    if (!def) return;
+    const n = (this.visits[def.id] = (this.visits[def.id] || 0) + 1);
+    const seed = o.fixedSeed ?? hashSeed(this.session + ':' + def.id + ':' + n);
+    const slot = (this.after = { ready: false, def });
+    // (at the crossing the slot moves up to be the next world: the load finds it wherever it is by then)
+    this._load(def, seed, B).then((W) => { if (this.after === slot) this.after = W; else if (this.next === slot) { this.next = W; this._lookAhead(); } else this._dispose(W); })
+      .catch((e) => {
+        console.error('world failed', def.id, e); if (this.tourDef === def) this.tourDef = null; this.seriesFailed.add(def.id);
+        if (this.after === slot) this.after = null;
+        else if (this.next === slot) { this.events.status({ error: def.id + ': ' + e.message }); this.next = null; setTimeout(() => { if (!this.next) this._queueNext(); }, 200); }
+      });
+  }
+  // The world got ready ahead is let go with the waiting world it was to be entered from; the picker forgets it was handed out.
+  _dropAfter() {
+    const a = this.after; if (!a) return;
+    this.after = null; if (a.ready) this._dispose(a);
+    this.recent.pop();
   }
   // firstDef may be the antechamber (def.antechamber: the place between worlds that a visit opens in, src/worlds/_antechamber.js)
   // with the journey's first world as nextDef. The antechamber is not a world of the journey: it is not counted (count stays 0,
@@ -551,7 +597,7 @@ export class Engine {
     if (!t.list.length) {
       if (W.scene.background?.isTexture) W.scene.background.dispose();
       if (W.scene.environment?.isTexture) W.scene.environment.dispose();
-      for (const K of [this.cur, this.next]) { const f = K?.ctx?.from; if (f && f.world === W.world) f.world = null; }   // cleared: id and def stay readable, its arrays go
+      for (const K of [this.cur, this.next, this.after]) { const f = K?.ctx?.from; if (f && f.world === W.world) f.world = null; }   // cleared: id and def stay readable, its arrays go
       this._trash.shift();
     }
     this.perf.mark('clear', performance.now() - t0);
@@ -668,7 +714,7 @@ export class Engine {
     // a hurry ends at the portal: the speed carried into the next world is no more than this world's own unhurried pace at its end,
     // and into a slower world no more than the doorway's pace (frame(): the next world's opening pace, or DOOR_FLOOR of this cruise)
     if (this.boost) { const vA = (A.path.length / A.duration) * this.settings.speed; this.speed = Math.min(this.speed, vA * (A.pace ? A.pace(1) : 1), Math.max((B.path.length / B.duration) * this.settings.speed * (B.pace ? B.pace(0) : 1), DOOR_FLOOR * vA)); }
-    this.cur = B; this.next = null; this.count++; this.blend = 0; this.reveal = 0; this.boost = 0; this.arrived = 0;
+    this.cur = B; this.next = this.after || null; this.after = null; this.count++; this.blend = 0; this.reveal = 0; this.boost = 0; this.arrived = 0;
     A.view.set(null); A.shown = null; B.ctx.through = false;
     const ts = performance.now();
     // out of the antechamber the journey begins: world 1 (count went from 0 to 1 above) is entered as a first world is, from
@@ -678,7 +724,7 @@ export class Engine {
     this._trash.push({ W: A, at: performance.now() + 700 });
     this.events.world(B, this.count);
     this.perf.mark('swap', performance.now() - ts);
-    if (!this.opts.single) setTimeout(() => { if (!this.next) this._queueNext(); }, 1200);   // (the gun's dial may have asked for a world meanwhile)
+    if (!this.opts.single) setTimeout(() => { if (!this.next) this._queueNext(); else this._lookAhead(); }, 1200);   // (the gun's dial may have asked for a world meanwhile)
   }
 
   // Renders the next world into the portal texture. Returns false when the portal is off screen.
@@ -1015,6 +1061,7 @@ export class Engine {
   // settings that shape a world changed: rebuild the waiting world if the viewer has not seen it yet
   refresh() {
     const n = this.next; if (!n || this.reveal > 0.01 || this.opts.single) return;
+    this._dropAfter();
     this.next = null; if (n.ready) this._dispose(n);
     this.recent.pop(); this.lastId = this.cur?.def.id; this._queueNext();
   }
@@ -1176,6 +1223,7 @@ export class Engine {
   requeue() {
     const A = this.cur, n = this.next;
     if (!A || this.opts.single || (n && n.ready && A.path.length - A.dist < 12)) return false;
+    this._dropAfter();
     this.next = null; if (n && n.ready) this._dispose(n);
     if (n) { this.recent.pop(); this.lastId = A.def.id; }
     this._queueNext();
