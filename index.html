@@ -93,7 +93,8 @@ try {
     try { localStorage.setItem(KEY, JSON.stringify(now)); } catch (e) {}
   }
 } catch (e) { /* offline or no version file: the page starts as it always did */ }
-import('./src/main.js');
+// ?pkm=1: Portals in 2D, a small game of its own (src/pkm/game.js); nothing of the flight is loaded then
+if (new URLSearchParams(location.search).get('pkm') === '1') import('./src/pkm/game.js'); else import('./src/main.js');
 </script>
 <script nomodule>document.getElementById('veil-sub').textContent = 'this browser is too old to show the worlds';</script>
 </body>

@@ -74,6 +74,18 @@ Neither the gun nor the hand holding it is drawn any more: a tap or a click open
 
 The gun is loud by default: a shock ring and sparks where a portal opens, a shake, streaks of light and a wider lens on the way in, and quick fire. `?flash=0` gives the quiet gun, and the Gentle setting (G) keeps the shake and the lens out.
 
+## Portals in 2D (added in this copy)
+
+Open the page with `?pkm=1` ([paul1064.github.io/ai-portals/?pkm=1](https://paul1064.github.io/ai-portals/?pkm=1)) and the journey is a small game seen from above, in the old genre of collecting and training creatures. Each dimension carries the name and code of one of the worlds; you walk from a camp fire to the portal, meet creatures in the tall grass, fight in turns, catch them with golden cores and have to pass the keeper that stands before the portal. All 24 creatures, their names, kinds, moves and pictures were made for this game (`src/pkm/`); the pictures are drawn from numbers, and nothing of the 3D page is loaded. The game is in German and keeps its state in the browser.
+
+| Input | What it does |
+|---|---|
+| Arrow keys, WASD | Walk; move in a menu |
+| Enter, Space, Z | Yes, go on |
+| X, Esc, Backspace | Back; on the walk, the menu (team, the card index of creatures, this world in 3D, a new game) |
+| M | Sound on and off |
+| Touch screen | A cross and the buttons A, B and MENÜ |
+
 ## Controls
 
 | Key | What it does |
@@ -149,6 +161,7 @@ Changed against the original tree (commit `210133f`):
 - `src/gun/portal-gun.js` (new): the gun's model, its display and dial, the bolt, the sounds, mouse look, touch controls, brake and push, and the loud effects.
 - `src/core/engine.js`: `shoot()`, `canShoot()`, `requeue()` and the ray test behind them; a hidden portal made with each world for the shot; the viewer's look and throttle; a hook (`chooser`) that lets the dial pick the next world.
 - `src/core/engine.js`, loading: with the gun on, a world wanted soon is no longer handed to the graphics card in one piece (the picture stood still for seconds shortly after a crossing) but in a share of each frame, and on a desktop the world after the next is got ready ahead (`_lookAhead()`; `?ahead=0` switches it off, `?ahead=1` asks for it on a phone). Where the browser cannot compile shaders in the background (Firefox), programs are made and linked one at a time with ordinary frames between, and the warm-up draws are sized by what the last batch cost the graphics card.
+- `src/pkm/` (new) and one line of `index.html`: Portals in 2D, the game behind `?pkm=1`.
 - `src/core/portal.js`: one more portal look, `vortex`, used only for shot portals.
 - `src/main.js`: two lines that switch the gun on (`?gun=0` switches it off).
 - `README.md`: the notice at the top and the two sections about the gun.
