@@ -198,9 +198,10 @@ async function cross() {
 }
 async function pause() {
   for (;;) {
-    const v = await choose([{ label: 'Team', value: 'team' }, { label: 'Kartei ' + st.caught.size + '/' + SPECIES.length, value: 'dex' }, { label: 'Diese Welt in 3D', value: '3d' }, { label: 'Ton: ' + (mute ? 'aus' : 'an'), value: 'mute' }, { label: 'Neues Spiel', value: 'new' }, { label: 'Zurück', value: null }], { cancel: true, title: 'KERNE ' + st.cores });
+    const v = await choose([{ label: 'Team', value: 'team' }, { label: 'Kartei ' + st.caught.size + '/' + SPECIES.length, value: 'dex' }, ...(st.box.length ? [{ label: 'Lager (' + st.box.length + ')', value: 'box' }] : []), { label: 'Diese Welt in 3D', value: '3d' }, { label: 'Ton: ' + (mute ? 'aus' : 'an'), value: 'mute' }, { label: 'Neues Spiel', value: 'new' }, { label: 'Zurück', value: null }], { cancel: true, title: 'KERNE ' + st.cores });
     if (v === 'team') await teamMenu(false);
     else if (v === 'dex') await new Promise((resolve) => { modal = { type: 'show', what: 'dex', resolve }; });
+    else if (v === 'box') await boxMenu();
     else if (v === 'mute') press('m');
     else if (v === '3d') { if ((await choose([{ label: 'Ja, hinfliegen', value: 1 }, { label: 'Nein', value: 0 }], { cancel: true, title: world.name })) === 1) { save(); location.href = './?start=' + encodeURIComponent(world.id); return; } }
     else if (v === 'new') { if ((await choose([{ label: 'Nein', value: 0 }, { label: 'Ja, alles löschen', value: 1 }], { cancel: true, title: 'Spielstand löschen?' })) === 1) { try { localStorage.removeItem(SAVE); } catch (e) {} location.reload(); return; } }
@@ -215,6 +216,20 @@ async function teamMenu(inFight, must) {
     if (v == null) return null;
     if (inFight) return st.team[v];
     if (v > 0) { const c = st.team.splice(v, 1)[0]; st.team.unshift(c); save(); blip(880, 0.06); }
+  }
+}
+
+// the store: creatures caught while the team was full. One of them changes places with one of the team.
+async function boxMenu() {
+  for (;;) {
+    const i = await choose(st.box.slice(0, 9).map((c, k) => ({ label: row(c), value: k })), { cancel: true, title: 'Wen holst du aus dem Lager?', where: 'wide' });
+    if (i == null) return;
+    const j = await choose(st.team.map((c, k) => ({ label: row(c), value: k })), { cancel: true, title: 'Wer geht daf\u00FCr ins Lager?', where: 'wide' });
+    if (j == null) continue;
+    const a = st.box[i]; st.box[i] = st.team[j]; st.team[j] = a;
+    if (!alive().length) { const b = st.box[i]; st.box[i] = st.team[j]; st.team[j] = b; await say('Dann k\u00F6nnte niemand mehr k\u00E4mpfen.'); continue; }
+    save(); blip(880, 0.06); await say(nameOf(a) + ' ist jetzt im Team.');
+    if (!st.box.length) return;
   }
 }
 

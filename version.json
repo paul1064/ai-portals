@@ -1,5 +1,5 @@
 {
- "build": "adc93606e0",
+ "build": "9f5393c120",
  "files": {
   "src/companions/the-drift.js": "92861874d6",
   "src/companions/wandering-lantern.js": "d254acb7fc",
@@ -43,7 +43,7 @@
   "src/kit/water.js": "390c88a4c9",
   "src/main.js": "18a76ec08f",
   "src/pkm/data.js": "1a9d93b3ce",
-  "src/pkm/game.js": "a2f8d1d9b0",
+  "src/pkm/game.js": "be9c83b9a7",
   "src/pkm/sprites.js": "be683bce51",
   "src/rides/firefly-lantern.js": "3ba05bdabf",
   "src/rides/magic-carpet.js": "47e4fbd7a2",
